@@ -1,0 +1,37 @@
+# ---- Front (Node / Vite) ----
+node_modules/
+dist/
+build/
+.cache/
+.vite/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+*-debug.log*
+logs/
+*.log
+.claude-replay.*
+.tmp-*
+
+# ---- Backend (Python) ----
+server/.venv/
+.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+server/*.db
+cardiolink.db
+
+# ---- Environment (keep *.example) ----
+.env
+.env.local
+.env.*.local
+
+# ---- Figma Make internal ----
+/.figma/
+/.plugins/
+/.opencode-skills/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
