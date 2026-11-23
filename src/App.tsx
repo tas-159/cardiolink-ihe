@@ -1,7 +1,8 @@
-import { FormEvent, ReactNode, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
+import { cornerstone, initCornerstone, studyImageId } from "./dicom";
 import { useStore } from "./store";
-import type { Patient } from "./types";
+import type { Patient, StudyRow } from "./types";
 
 type IconName =
   | "activity"
@@ -395,7 +396,7 @@ function App() {
               onAdd={() => setAddModal("examen")}
             />
           ) : active === "Imagerie PACS" ? (
-            <PacsView onAction={showAction} onAdd={() => setAddModal("image")} />
+            <PacsView onAdd={() => setAddModal("image")} />
           ) : active === "Documents" ? (
             <DocumentsView onAction={showAction} onAdd={() => setAddModal("document")} />
           ) : (
@@ -952,8 +953,9 @@ function ExamsView({
   );
 }
 
-function PacsView({ onAction, onAdd }: { onAction: (message: string) => void; onAdd: () => void }) {
+function PacsView({ onAdd }: { onAdd: () => void }) {
   const { studies } = useStore();
+  const [viewer, setViewer] = useState<StudyRow | null>(null);
   return (
     <>
       <PageTitle
@@ -981,13 +983,96 @@ function PacsView({ onAction, onAdd }: { onAction: (message: string) => void; on
               </p>
               <strong>{study.result}</strong>
             </div>
-            <button onClick={() => onAction(`Visionneuse DICOM ouverte pour ${study.reference}.`)}>
+            <button onClick={() => setViewer(study)}>
               Ouvrir l’étude <Icon name="arrow" size={15} />
             </button>
           </article>
         ))}
       </div>
+      {viewer && <DicomViewer study={viewer} onClose={() => setViewer(null)} />}
     </>
+  );
+}
+
+function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    let enabled = false;
+    let cancelled = false;
+
+    initCornerstone();
+    try {
+      cornerstone.enable(element);
+      enabled = true;
+    } catch {
+      setStatus("error");
+      return;
+    }
+
+    cornerstone
+      .loadImage(studyImageId(study.reference))
+      .then((image: unknown) => {
+        if (cancelled) return;
+        cornerstone.displayImage(element, image);
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+      if (enabled) {
+        try {
+          cornerstone.disable(element);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }, [study.reference]);
+
+  return (
+    <div className="modal-layer" role="presentation" onMouseDown={onClose}>
+      <section
+        className="dicom-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Visionneuse DICOM — ${study.reference}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="dicom-head">
+          <div>
+            <span>DICOM · {study.reference}</span>
+            <strong>{study.type}</strong>
+            <small>
+              {study.patientName} · {study.cardioId}
+            </small>
+          </div>
+          <button onClick={onClose} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+        <div className="dicom-stage">
+          <div className="dicom-canvas" ref={ref} />
+          {status === "loading" && <div className="dicom-overlay">Chargement de l’étude…</div>}
+          {status === "error" && (
+            <div className="dicom-overlay error">
+              Impossible de charger l’étude DICOM.
+              <small>Vérifiez que l’API tourne sur le port 8000.</small>
+            </div>
+          )}
+        </div>
+        <div className="dicom-foot">
+          <Icon name="shield" size={14} /> Rendu client-side (Cornerstone.js) ·{" "}
+          {study.result}
+        </div>
+      </section>
+    </div>
   );
 }
 

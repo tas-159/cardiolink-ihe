@@ -1,9 +1,13 @@
 // Thin fetch wrapper for the CardioLink API. Attaches the JWT when set.
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+export const API_BASE = BASE;
 
 let authToken: string | null = null;
 export function setToken(token: string | null) {
   authToken = token;
+}
+export function getToken(): string | null {
+  return authToken;
 }
 
 async function request(path: string, options: RequestInit = {}) {

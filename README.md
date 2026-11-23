@@ -97,5 +97,12 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 - [x] **P2** — login screen wired to `/auth/login` (JWT)
 - [x] **P3** — hardcoded front data replaced with live API calls
 - [x] **P4** — "add" modals persist (patient/exam/study/document) + audit
-- [ ] **P5** — real DICOM viewer (Cornerstone.js) on the PACS screen
+- [x] **P5** — real DICOM viewer (Cornerstone.js) on the PACS screen
 - [ ] **P6** — polish, error/loading states, final release
+
+### DICOM notes
+The PACS screen opens studies in a real client-side DICOM viewer (Cornerstone.js).
+The backend generates synthetic, uncompressed `.dcm` files on demand under
+`server/dicom_store/`. To use **real** studies, drop a file named
+`<REFERENCE>.dcm` (e.g. `PACS-914.dcm`) into that folder — the viewer reads
+whatever is there. The backend needs `pydicom` + `numpy` (in `requirements.txt`).

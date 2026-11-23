@@ -21,6 +21,7 @@ server/.venv/
 .pytest_cache/
 server/*.db
 cardiolink.db
+server/dicom_store/
 
 # ---- Environment (keep *.example) ----
 .env

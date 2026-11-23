@@ -2585,3 +2585,94 @@ footer p {
   font-size: 11px;
   padding: 7px 11px;
 }
+
+/* ============================================================
+   DICOM viewer (Cornerstone.js) — dark imaging modal
+   ============================================================ */
+.dicom-modal {
+  width: min(680px, 96vw);
+  background: #14110f;
+  color: #f3ece2;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+.dicom-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+.dicom-head > div span {
+  display: block;
+  margin-bottom: 3px;
+  color: #8fbcd4;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.dicom-head > div strong {
+  display: block;
+  font-size: 16px;
+}
+.dicom-head > div small {
+  color: #b8a99e;
+  font-size: 11.5px;
+}
+.dicom-head button {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3ece2;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dicom-head button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.dicom-stage {
+  position: relative;
+  background: #000;
+  display: grid;
+  place-items: center;
+}
+.dicom-canvas {
+  width: 100%;
+  height: clamp(320px, 62vh, 560px);
+}
+.dicom-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  color: #cdbfb4;
+  font-size: 13px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.dicom-overlay.error {
+  color: #f2b8b2;
+}
+.dicom-overlay small {
+  color: #9a8e84;
+  font-size: 11px;
+}
+.dicom-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  color: #9fb8c6;
+  font-size: 11.5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
