@@ -20,6 +20,7 @@ type Store = {
   audit: AuditRow[];
   documents: DocRow[];
   studies: StudyRow[];
+  users: CurrentUser[];
   pix: PixStatus | null;
   error: string;
   login: (identifier: string, password: string) => Promise<boolean>;
@@ -29,6 +30,7 @@ type Store = {
   createExam: (body: unknown) => Promise<void>;
   createStudy: (body: unknown) => Promise<void>;
   createDocument: (body: unknown) => Promise<void>;
+  createUser: (body: unknown) => Promise<void>;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -55,6 +57,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [documents, setDocuments] = useState<DocRow[]>([]);
   const [studies, setStudies] = useState<StudyRow[]>([]);
+  const [users, setUsers] = useState<CurrentUser[]>([]);
   const [pix, setPix] = useState<PixStatus | null>(null);
   const [error, setError] = useState("");
 
@@ -66,17 +69,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!readToken()) return;
     try {
-      const [p, a, d, s, px] = await Promise.all([
+      const [p, a, d, s, u, px] = await Promise.all([
         api.patients(),
         api.audit(),
         api.documents(),
         api.studies(),
+        api.users(),
         api.pixStatus(),
       ]);
       setPatients(p);
       setAudit(a);
       setDocuments(d);
       setStudies(s);
+      setUsers(u);
       setPix(px);
       setError("");
     } catch (e) {
@@ -148,6 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAudit([]);
     setDocuments([]);
     setStudies([]);
+    setUsers([]);
     setPix(null);
   }, []);
 
@@ -179,6 +185,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [refresh],
   );
+  const createUser = useCallback(
+    async (body: unknown) => {
+      await api.createUser(body);
+      await refresh();
+    },
+    [refresh],
+  );
 
   const value: Store = {
     token,
@@ -188,6 +201,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     audit,
     documents,
     studies,
+    users,
     pix,
     error,
     login,
@@ -197,6 +211,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     createExam,
     createStudy,
     createDocument,
+    createUser,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

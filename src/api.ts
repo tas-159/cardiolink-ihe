@@ -37,6 +37,9 @@ export const api = {
   login: (identifier: string, password: string) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password }) }),
   me: () => request("/auth/me"),
+  users: () => request("/auth/users"),
+  createUser: (body: unknown) =>
+    request("/auth/users", { method: "POST", body: JSON.stringify(body) }),
   patients: (query = "") =>
     request(`/patients${query ? `?query=${encodeURIComponent(query)}` : ""}`),
   createPatient: (body: unknown) =>

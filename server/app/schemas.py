@@ -122,3 +122,11 @@ class DocumentCreate(BaseModel):
     cardioId: Optional[str] = None
     title: str
     doc_type: str = "PDF"
+
+
+class UserCreate(BaseModel):
+    identifier: str
+    password: str
+    name: str
+    role: str
+    initials: Optional[str] = None

@@ -162,6 +162,7 @@ function App() {
   const [addModal, setAddModal] = useState<"patient" | "examen" | "image" | "document" | null>(
     null,
   );
+  const [userModal, setUserModal] = useState(false);
   const [notice, setNotice] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
 
@@ -194,6 +195,7 @@ function App() {
     ["Imagerie PACS", "image"],
     ["Documents", "document"],
     ["Journal d’audit", "shield"],
+    ["Utilisateurs", "users"],
   ] as [string, IconName][];
 
   function navigate(label: string) {
@@ -366,6 +368,8 @@ function App() {
         <div className="content">
           {active === "Journal d’audit" ? (
             <AuditView onBack={() => setActive("Vue d’ensemble")} />
+          ) : active === "Utilisateurs" ? (
+            <UsersView onAdd={() => setUserModal(true)} />
           ) : active === "Patients" ? (
             selectedPatient ? (
               <PatientRecord
@@ -430,6 +434,15 @@ function App() {
       )}
       {accountModal && (
         <AccountModal onClose={() => setAccountModal(false)} onConnect={changeAccount} />
+      )}
+      {userModal && (
+        <UserModal
+          onClose={() => setUserModal(false)}
+          onCreated={(message) => {
+            setUserModal(false);
+            showAction(message);
+          }}
+        />
       )}
       {notice && (
         <div className="toast">
@@ -1591,6 +1604,154 @@ function AuditView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function UsersView({ onAdd }: { onAdd: () => void }) {
+  const { users } = useStore();
+  return (
+    <>
+      <PageTitle
+        eyebrow="SÉCURITÉ · COMPTES"
+        title="Gestion des comptes"
+        subtitle={`${users.length} compte${users.length > 1 ? "s" : ""} · accès provisionnés par un responsable`}
+        action={
+          <button className="primary-action" onClick={onAdd}>
+            <Icon name="user" size={17} /> Créer un compte
+          </button>
+        }
+      />
+      <div className="panel audit-panel">
+        <div className="panel-head">
+          <div>
+            <h2>Comptes professionnels</h2>
+            <p>Chaque création est enregistrée dans le journal d’audit (ATNA).</p>
+          </div>
+          <div className="secure-pill">
+            <Icon name="shield" size={14} /> Accès contrôlé
+          </div>
+        </div>
+        <div className="audit-table">
+          <div className="audit-row header">
+            <span>Identifiant</span>
+            <span>Nom</span>
+            <span>Rôle</span>
+            <span>Initiales</span>
+          </div>
+          {users.map((account) => (
+            <div className="audit-row" key={account.identifier}>
+              <span>{account.identifier}</span>
+              <strong>{account.name}</strong>
+              <span>{account.role}</span>
+              <em>
+                <i />
+                {account.initials}
+              </em>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function UserModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (message: string) => void;
+}) {
+  const store = useStore();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    const get = (k: string) => String(fd.get(k) ?? "").trim();
+    setBusy(true);
+    setError("");
+    try {
+      await store.createUser({
+        identifier: get("identifier"),
+        name: get("name"),
+        role: get("role"),
+        password: get("password"),
+      });
+      onCreated("Le nouveau compte a été créé et enregistré dans le journal d’audit.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la création du compte.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-layer" role="presentation" onMouseDown={onClose}>
+      <section
+        className="add-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div className="modal-title-icon">
+            <Icon name="user" size={20} />
+          </div>
+          <div>
+            <span>NOUVEL ACCÈS</span>
+            <h2 id="user-modal-title">Créer un compte</h2>
+          </div>
+          <button onClick={onClose} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="form-grid">
+            <label>
+              Identifiant
+              <input name="identifier" required placeholder="Ex. AB-312" />
+            </label>
+            <label>
+              Nom complet
+              <input name="name" required placeholder="Ex. Dr Ahmed Brahmi" />
+            </label>
+            <label>
+              Rôle
+              <select name="role" required defaultValue="">
+                <option value="" disabled>
+                  Sélectionner
+                </option>
+                <option>Cardiologue</option>
+                <option>Infirmière coordinatrice</option>
+                <option>Radiologue</option>
+                <option>Technicien</option>
+                <option>Administrateur</option>
+              </select>
+            </label>
+            <label>
+              Mot de passe
+              <input name="password" required type="password" placeholder="Mot de passe" />
+            </label>
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <div className="modal-note">
+            <Icon name="shield" size={15} />
+            La création de compte sera enregistrée dans le journal d’audit.
+          </div>
+          <div className="modal-actions">
+            <button type="button" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="submit" disabled={busy}>
+              {busy ? "Création…" : "Créer le compte"} <Icon name="arrow" size={16} />
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 
