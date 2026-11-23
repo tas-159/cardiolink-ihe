@@ -94,8 +94,8 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 ## Roadmap
 
 - [x] **P0/P1** — backend skeleton, data model, seed, REST endpoints
-- [ ] **P2** — wire the login screen to `/auth/login`
-- [ ] **P3** — replace hardcoded front data with API calls
-- [ ] **P4** — wire the "add" modals (persist + audit)
+- [x] **P2** — login screen wired to `/auth/login` (JWT)
+- [x] **P3** — hardcoded front data replaced with live API calls
+- [x] **P4** — "add" modals persist (patient/exam/study/document) + audit
 - [ ] **P5** — real DICOM viewer (Cornerstone.js) on the PACS screen
 - [ ] **P6** — polish, error/loading states, final release

@@ -1,5 +1,8 @@
 import { FormEvent, ReactNode, useMemo, useState } from "react";
 
+import { useStore } from "./store";
+import type { Patient } from "./types";
+
 type IconName =
   | "activity"
   | "arrow"
@@ -146,254 +149,13 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   );
 }
 
-type Exam = {
-  type: string;
-  date: string;
-  reference: string;
-  status: string;
-  result: string;
-  icon: IconName;
-  tone: string;
-};
-
-type Patient = {
-  id: number;
-  initials: string;
-  name: string;
-  gender: string;
-  birth: string;
-  age: number;
-  master: string;
-  cardioId: string;
-  hisId: string;
-  phone: string;
-  address: string;
-  blood: string;
-  allergies: string;
-  doctor: string;
-  reason: string;
-  admission: string;
-  status: string;
-  exams: Exam[];
-};
-
-const patients: Patient[] = [
-  {
-    id: 1,
-    initials: "AB",
-    name: "Amine Ben Ali",
-    gender: "Homme",
-    birth: "12 mai 1988",
-    age: 38,
-    master: "MASTER-77",
-    cardioId: "CARD-025",
-    hisId: "HIS-001",
-    phone: "+216 22 431 879",
-    address: "18 rue des Jasmins, Tunis",
-    blood: "O+",
-    allergies: "Aucune connue",
-    doctor: "Dr Léa Martin",
-    reason: "Douleur thoracique",
-    admission: "16 oct. 2026 · 08:41",
-    status: "En consultation",
-    exams: [
-      {
-        type: "Électrocardiogramme",
-        date: "16 oct. 2026 · 09:32",
-        reference: "ECG-778",
-        status: "À analyser",
-        result: "Rythme sinusal · 72 bpm",
-        icon: "activity",
-        tone: "blue",
-      },
-      {
-        type: "Bilan sanguin",
-        date: "16 oct. 2026 · 09:48",
-        reference: "LAB-301",
-        status: "Validé",
-        result: "Troponine 0,02 ng/mL",
-        icon: "lab",
-        tone: "cream",
-      },
-      {
-        type: "Échocardiographie",
-        date: "16 oct. 2026 · 10:14",
-        reference: "PACS-914",
-        status: "Disponible",
-        result: "FEVG 62% · Étude DICOM",
-        icon: "image",
-        tone: "brown",
-      },
-    ],
-  },
-  {
-    id: 2,
-    initials: "SC",
-    name: "Sofia Cherif",
-    gender: "Femme",
-    birth: "3 février 1976",
-    age: 50,
-    master: "MASTER-81",
-    cardioId: "CARD-041",
-    hisId: "HIS-018",
-    phone: "+216 55 902 144",
-    address: "7 avenue de Carthage, Ariana",
-    blood: "A+",
-    allergies: "Pénicilline",
-    doctor: "Dr Léa Martin",
-    reason: "Palpitations",
-    admission: "16 oct. 2026 · 09:12",
-    status: "Examens en cours",
-    exams: [
-      {
-        type: "Holter ECG",
-        date: "16 oct. 2026 · 10:05",
-        reference: "ECG-804",
-        status: "En cours",
-        result: "Enregistrement 24 h",
-        icon: "activity",
-        tone: "blue",
-      },
-      {
-        type: "Ionogramme sanguin",
-        date: "16 oct. 2026 · 09:55",
-        reference: "LAB-326",
-        status: "Validé",
-        result: "Valeurs dans les normes",
-        icon: "lab",
-        tone: "cream",
-      },
-    ],
-  },
-  {
-    id: 3,
-    initials: "YM",
-    name: "Youssef Mansour",
-    gender: "Homme",
-    birth: "27 août 1959",
-    age: 67,
-    master: "MASTER-52",
-    cardioId: "CARD-019",
-    hisId: "HIS-112",
-    phone: "+216 98 230 571",
-    address: "42 rue Ibn Khaldoun, Sousse",
-    blood: "B-",
-    allergies: "Produit de contraste iodé",
-    doctor: "Dr Léa Martin",
-    reason: "Contrôle post-infarctus",
-    admission: "15 oct. 2026 · 14:20",
-    status: "Dossier complet",
-    exams: [
-      {
-        type: "Échocardiographie",
-        date: "15 oct. 2026 · 15:10",
-        reference: "PACS-881",
-        status: "Analysé",
-        result: "FEVG 48% · Hypokinésie inférieure",
-        icon: "image",
-        tone: "brown",
-      },
-      {
-        type: "Épreuve d’effort",
-        date: "15 oct. 2026 · 16:00",
-        reference: "CARD-TEST-28",
-        status: "Analysé",
-        result: "Test sous-maximal négatif",
-        icon: "heart",
-        tone: "cream",
-      },
-    ],
-  },
-  {
-    id: 4,
-    initials: "IN",
-    name: "Inès Nouira",
-    gender: "Femme",
-    birth: "19 novembre 1994",
-    age: 31,
-    master: "MASTER-93",
-    cardioId: "CARD-058",
-    hisId: "HIS-207",
-    phone: "+216 26 774 305",
-    address: "5 résidence El Bahia, Nabeul",
-    blood: "AB+",
-    allergies: "Aucune connue",
-    doctor: "Dr Sami Gharbi",
-    reason: "Souffle cardiaque",
-    admission: "14 oct. 2026 · 11:05",
-    status: "Suivi programmé",
-    exams: [
-      {
-        type: "Échocardiographie Doppler",
-        date: "14 oct. 2026 · 11:45",
-        reference: "PACS-952",
-        status: "Disponible",
-        result: "Insuffisance mitrale légère",
-        icon: "image",
-        tone: "brown",
-      },
-    ],
-  },
-];
-
-const auditRows = [
-  {
-    time: "Aujourd’hui, 10:18",
-    actor: "Dr L. Martin",
-    action: "Consultation PIX",
-    result: "Autorisé",
-  },
-  {
-    time: "Aujourd’hui, 10:14",
-    actor: "PACS · RAD-54",
-    action: "Ajout étude DICOM",
-    result: "Synchronisé",
-  },
-  {
-    time: "Aujourd’hui, 09:32",
-    actor: "ECG · LAB-3",
-    action: "Résultat transmis",
-    result: "Synchronisé",
-  },
-  {
-    time: "Aujourd’hui, 09:06",
-    actor: "PIX Manager",
-    action: "Rapprochement CARD-025",
-    result: "Validé",
-  },
-];
-
-const demoAccounts = {
-  "LM-001": {
-    password: "Lea2026!",
-    initials: "LM",
-    name: "Dr Léa Martin",
-    role: "Cardiologue",
-  },
-  "SG-204": {
-    password: "Sami2026!",
-    initials: "SG",
-    name: "Dr Sami Gharbi",
-    role: "Cardiologue",
-  },
-  "FC-118": {
-    password: "Farah2026!",
-    initials: "FC",
-    name: "Farah Cherif",
-    role: "Infirmière coordinatrice",
-  },
-} as const;
-
 function App() {
+  const store = useStore();
+  const { user, ready, patients } = store;
+
   const [active, setActive] = useState("Vue d’ensemble");
-  const [currentUser, setCurrentUser] = useState({
-    initials: "LM",
-    name: "Dr Léa Martin",
-    role: "Cardiologue",
-  });
   const [accountMenu, setAccountMenu] = useState(false);
   const [accountModal, setAccountModal] = useState(false);
-  const [loggedOut, setLoggedOut] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [examPatient, setExamPatient] = useState<Patient | null>(null);
@@ -411,7 +173,7 @@ function App() {
           .toLowerCase()
           .includes(query.trim().toLowerCase()),
       ),
-    [query],
+    [patients, query],
   );
 
   function submitSearch(event: FormEvent) {
@@ -451,25 +213,25 @@ function App() {
     setActive("Examens");
   }
 
-  function changeAccount(identifier: string, password: string) {
-    const normalized = identifier.trim().toUpperCase();
-    const account = demoAccounts[normalized as keyof typeof demoAccounts];
-    if (!account || account.password !== password) return false;
-    setCurrentUser({
-      initials: account.initials,
-      name: account.name,
-      role: account.role,
-    });
-    setAccountModal(false);
-    setAccountMenu(false);
-    setLoggedOut(false);
-    showAction(`${account.name} est maintenant connecté(e).`);
-    return true;
+  async function changeAccount(identifier: string, password: string) {
+    const ok = await store.login(identifier, password);
+    if (ok) {
+      setAccountModal(false);
+      setAccountMenu(false);
+      showAction("Compte changé. Session enregistrée dans le journal d’audit.");
+    }
+    return ok;
   }
 
-  if (loggedOut) {
-    return <LoggedOutScreen onConnect={changeAccount} />;
+  if (!ready) {
+    return <LoadingScreen />;
   }
+
+  if (!user) {
+    return <LoggedOutScreen onConnect={store.login} />;
+  }
+
+  const examCount = patients.reduce((sum, p) => sum + p.exams.length, 0);
 
   return (
     <div className="app-shell">
@@ -497,7 +259,7 @@ function App() {
             >
               <Icon name={icon} size={19} />
               <span>{label}</span>
-              {label === "Examens" && <b>{patients.reduce((sum, p) => sum + p.exams.length, 0)}</b>}
+              {label === "Examens" && <b>{examCount}</b>}
             </button>
           ))}
           <p>SÉCURITÉ</p>
@@ -525,10 +287,10 @@ function App() {
         </div>
 
         <div className="profile">
-          <div className="avatar">{currentUser.initials}</div>
+          <div className="avatar">{user.initials}</div>
           <div>
-            <strong>{currentUser.name}</strong>
-            <small>{currentUser.role}</small>
+            <strong>{user.name}</strong>
+            <small>{user.role}</small>
           </div>
           <button
             aria-label="Paramètres du compte"
@@ -540,9 +302,9 @@ function App() {
           {accountMenu && (
             <div className="account-menu">
               <div>
-                <span>{currentUser.initials}</span>
+                <span>{user.initials}</span>
                 <p>
-                  <strong>{currentUser.name}</strong>
+                  <strong>{user.name}</strong>
                   <small>Session sécurisée</small>
                 </p>
               </div>
@@ -557,7 +319,7 @@ function App() {
                 className="logout-action"
                 onClick={() => {
                   setAccountMenu(false);
-                  setLoggedOut(true);
+                  store.logout();
                 }}
               >
                 <Icon name="lock" size={16} />
@@ -639,7 +401,7 @@ function App() {
               onSearch={submitSearch}
               onPatients={() => navigate("Patients")}
               onOpen={openPatient}
-              userName={currentUser.name}
+              userName={user.name}
             />
           )}
         </div>
@@ -676,6 +438,29 @@ function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <main className="logout-screen">
+      <section className="login-card">
+        <div className="login-brand">
+          <div className="brand-mark">
+            <Icon name="heart" size={22} />
+            <span className="pulse-line" />
+          </div>
+          <strong>
+            Cardio<span>Link</span>
+          </strong>
+        </div>
+        <div className="logout-icon">
+          <Icon name="activity" size={25} />
+        </div>
+        <h1>Chargement…</h1>
+        <p>Connexion sécurisée à l’espace clinique.</p>
+      </section>
+    </main>
   );
 }
 
@@ -719,6 +504,11 @@ function Overview({
   onOpen: (patient: Patient) => void;
   userName: string;
 }) {
+  const { patients, pix } = useStore();
+  const toAnalyze = patients.reduce(
+    (sum, p) => sum + p.exams.filter((e) => /analyser|en cours/i.test(e.status)).length,
+    0,
+  );
   return (
     <>
       <section className="welcome">
@@ -736,10 +526,10 @@ function Overview({
           <div>
             <span>PIX Manager</span>
             <strong>
-              <i /> Opérationnel
+              <i /> {pix ? pix.status : "…"}
             </strong>
           </div>
-          <small>12 ms</small>
+          <small>{pix ? `${pix.latency_ms} ms` : "—"}</small>
         </div>
       </section>
       <form className="search-card compact-search" onSubmit={onSearch}>
@@ -782,7 +572,7 @@ function Overview({
             <Icon name="activity" />
           </span>
           <span>
-            Examens à analyser<strong>1</strong>
+            Examens à analyser<strong>{toAnalyze}</strong>
             <small>Priorité clinique</small>
           </span>
         </div>
@@ -791,8 +581,8 @@ function Overview({
             <Icon name="calendar" />
           </span>
           <span>
-            Consultations du jour<strong>3</strong>
-            <small>Prochaine à 11:30</small>
+            Consultations du jour<strong>{patients.length}</strong>
+            <small>Dossiers actifs</small>
           </span>
         </div>
       </div>
@@ -1079,6 +869,7 @@ function ExamsView({
   onAction: (message: string) => void;
   onAdd: () => void;
 }) {
+  const { patients } = useStore();
   const displayed = patient ? [patient] : patients;
   return (
     <>
@@ -1120,7 +911,7 @@ function ExamsView({
             {owner.exams.map((exam) => (
               <div className="exam-row" key={exam.reference}>
                 <span className={`result-icon ${exam.tone}`}>
-                  <Icon name={exam.icon} size={19} />
+                  <Icon name={exam.icon as IconName} size={19} />
                 </span>
                 <div>
                   <strong>{exam.type}</strong>
@@ -1149,9 +940,7 @@ function ExamsView({
 }
 
 function PacsView({ onAction, onAdd }: { onAction: (message: string) => void; onAdd: () => void }) {
-  const studies = patients.flatMap((patient) =>
-    patient.exams.filter((exam) => exam.icon === "image").map((exam) => ({ patient, exam })),
-  );
+  const { studies } = useStore();
   return (
     <>
       <PageTitle
@@ -1165,21 +954,21 @@ function PacsView({ onAction, onAdd }: { onAction: (message: string) => void; on
         }
       />
       <div className="pacs-grid">
-        {studies.map(({ patient, exam }) => (
-          <article className="panel pacs-card" key={exam.reference}>
+        {studies.map((study) => (
+          <article className="panel pacs-card" key={study.reference}>
             <div className="scan-preview">
               <Icon name="heart" size={38} />
               <span>DICOM</span>
             </div>
             <div>
-              <small>{exam.reference}</small>
-              <h3>{exam.type}</h3>
+              <small>{study.reference}</small>
+              <h3>{study.type}</h3>
               <p>
-                {patient.name} · {patient.cardioId}
+                {study.patientName} · {study.cardioId}
               </p>
-              <strong>{exam.result}</strong>
+              <strong>{study.result}</strong>
             </div>
-            <button onClick={() => onAction(`Visionneuse DICOM ouverte pour ${exam.reference}.`)}>
+            <button onClick={() => onAction(`Visionneuse DICOM ouverte pour ${study.reference}.`)}>
               Ouvrir l’étude <Icon name="arrow" size={15} />
             </button>
           </article>
@@ -1196,12 +985,7 @@ function DocumentsView({
   onAction: (message: string) => void;
   onAdd: () => void;
 }) {
-  const docs = [
-    ["Compte rendu cardiologique", "Amine Ben Ali", "CDA · 16 oct. 2026", "Dr Léa Martin"],
-    ["Résultats biologiques", "Sofia Cherif", "PDF · 16 oct. 2026", "Laboratoire central"],
-    ["Compte rendu d’échographie", "Youssef Mansour", "CDA · 15 oct. 2026", "Dr Léa Martin"],
-    ["Lettre de suivi", "Inès Nouira", "PDF · 14 oct. 2026", "Dr Sami Gharbi"],
-  ];
+  const { documents } = useStore();
   return (
     <>
       <PageTitle
@@ -1215,21 +999,21 @@ function DocumentsView({
         }
       />
       <section className="panel document-list">
-        {docs.map(([title, patient, meta, author]) => (
+        {documents.map((doc) => (
           <button
-            key={title + patient}
-            onClick={() => onAction(`${title} ouvert en lecture sécurisée.`)}
+            key={doc.id}
+            onClick={() => onAction(`${doc.title} ouvert en lecture sécurisée.`)}
           >
             <span className="doc-icon">
               <Icon name="document" size={20} />
             </span>
             <span>
-              <strong>{title}</strong>
+              <strong>{doc.title}</strong>
               <small>
-                {patient} · {meta}
+                {doc.patientName} · {doc.docType} · {doc.date}
               </small>
             </span>
-            <em>{author}</em>
+            <em>{doc.author}</em>
             <Icon name="chevron" size={17} />
           </button>
         ))}
@@ -1243,17 +1027,16 @@ function AccountModal({
   onConnect,
 }: {
   onClose: () => void;
-  onConnect: (identifier: string, password: string) => boolean;
+  onConnect: (identifier: string, password: string) => Promise<boolean>;
 }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!onConnect(identifier, password)) {
-      setError("Identifiant ou mot de passe incorrect.");
-    }
+    const ok = await onConnect(identifier, password);
+    if (!ok) setError("Identifiant ou mot de passe incorrect.");
   }
 
   return (
@@ -1362,17 +1145,19 @@ function AccountModal({
 function LoggedOutScreen({
   onConnect,
 }: {
-  onConnect: (identifier: string, password: string) => boolean;
+  onConnect: (identifier: string, password: string) => Promise<boolean>;
 }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!onConnect(identifier, password)) {
-      setError("Identifiant ou mot de passe incorrect. Vérifiez vos informations.");
-    }
+    setBusy(true);
+    const ok = await onConnect(identifier, password);
+    setBusy(false);
+    if (!ok) setError("Identifiant ou mot de passe incorrect. Vérifiez vos informations.");
   }
 
   return (
@@ -1423,8 +1208,8 @@ function LoggedOutScreen({
             </span>
           </label>
           {error && <div className="login-error">{error}</div>}
-          <button type="submit">
-            Se connecter <Icon name="arrow" size={17} />
+          <button type="submit" disabled={busy}>
+            {busy ? "Connexion…" : "Se connecter"} <Icon name="arrow" size={17} />
           </button>
         </form>
         <div className="login-demo">
@@ -1456,6 +1241,10 @@ function AddModal({
   onClose: () => void;
   onSubmit: (message: string) => void;
 }) {
+  const store = useStore();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
   const content = {
     patient: {
       eyebrow: "NOUVEAU DOSSIER",
@@ -1487,9 +1276,51 @@ function AddModal({
     },
   }[type];
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit(content.success);
+    const fd = new FormData(event.currentTarget);
+    const get = (k: string) => String(fd.get(k) ?? "");
+    setBusy(true);
+    setError("");
+    try {
+      if (type === "patient") {
+        await store.createPatient({
+          first_name: get("first_name"),
+          last_name: get("last_name"),
+          birth: get("birth"),
+          gender: get("gender"),
+          phone: get("phone"),
+          blood: get("blood"),
+          reason: get("reason"),
+        });
+      } else if (type === "examen") {
+        await store.createExam({
+          cardioId: get("cardioId"),
+          type: get("type"),
+          date: get("date"),
+          priority: get("priority"),
+          indication: get("indication"),
+        });
+      } else if (type === "image") {
+        await store.createStudy({
+          cardioId: get("cardioId"),
+          modality: get("modality"),
+          description: "",
+        });
+      } else {
+        const docType = get("doc_type");
+        await store.createDocument({
+          cardioId: get("cardioId"),
+          title: docType || "Document clinique",
+          doc_type: docType === "Compte rendu" ? "CDA" : "PDF",
+        });
+      }
+      onSubmit(content.success);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l’enregistrement.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -1519,19 +1350,19 @@ function AddModal({
               <div className="form-grid">
                 <label>
                   Prénom
-                  <input required placeholder="Prénom du patient" />
+                  <input name="first_name" required placeholder="Prénom du patient" />
                 </label>
                 <label>
                   Nom
-                  <input required placeholder="Nom du patient" />
+                  <input name="last_name" required placeholder="Nom du patient" />
                 </label>
                 <label>
                   Date de naissance
-                  <input required type="date" />
+                  <input name="birth" required type="date" />
                 </label>
                 <label>
                   Sexe
-                  <select required defaultValue="">
+                  <select name="gender" required defaultValue="">
                     <option value="" disabled>
                       Sélectionner
                     </option>
@@ -1542,11 +1373,11 @@ function AddModal({
                 </label>
                 <label>
                   Téléphone
-                  <input required type="tel" placeholder="+216…" />
+                  <input name="phone" required type="tel" placeholder="+216…" />
                 </label>
                 <label>
                   Groupe sanguin
-                  <select defaultValue="">
+                  <select name="blood" defaultValue="">
                     <option value="">Non renseigné</option>
                     <option>A+</option>
                     <option>A−</option>
@@ -1561,7 +1392,7 @@ function AddModal({
               </div>
               <label>
                 Motif de consultation
-                <textarea required placeholder="Décrivez le motif principal…" />
+                <textarea name="reason" required placeholder="Décrivez le motif principal…" />
               </label>
             </>
           )}
@@ -1570,7 +1401,7 @@ function AddModal({
               <PatientSelect />
               <label>
                 Type d’examen
-                <select required defaultValue="">
+                <select name="type" required defaultValue="">
                   <option value="" disabled>
                     Sélectionner
                   </option>
@@ -1583,18 +1414,18 @@ function AddModal({
               </label>
               <label>
                 Date prévue
-                <input required type="date" />
+                <input name="date" required type="date" />
               </label>
               <label>
                 Priorité
-                <select>
+                <select name="priority">
                   <option>Normale</option>
                   <option>Urgente</option>
                 </select>
               </label>
               <label className="full-field">
                 Indication clinique
-                <textarea required placeholder="Indication et informations utiles…" />
+                <textarea name="indication" required placeholder="Indication et informations utiles…" />
               </label>
             </div>
           )}
@@ -1604,7 +1435,7 @@ function AddModal({
                 <PatientSelect />
                 <label>
                   {type === "image" ? "Modalité" : "Type de document"}
-                  <select required defaultValue="">
+                  <select name={type === "image" ? "modality" : "doc_type"} required defaultValue="">
                     <option value="" disabled>
                       Sélectionner
                     </option>
@@ -1634,13 +1465,13 @@ function AddModal({
                   {type === "image" ? "Formats .dcm ou archive .zip" : "Formats PDF, CDA ou image"}
                 </span>
                 <input
-                  required
                   type="file"
                   accept={type === "image" ? ".dcm,.zip" : ".pdf,.xml,.jpg,.png"}
                 />
               </label>
             </>
           )}
+          {error && <div className="login-error">{error}</div>}
           <div className="modal-note">
             <Icon name="shield" size={15} />
             Cette opération sera enregistrée dans le journal d’audit.
@@ -1649,8 +1480,8 @@ function AddModal({
             <button type="button" onClick={onClose}>
               Annuler
             </button>
-            <button type="submit">
-              {content.submit} <Icon name="arrow" size={16} />
+            <button type="submit" disabled={busy}>
+              {busy ? "Enregistrement…" : content.submit} <Icon name="arrow" size={16} />
             </button>
           </div>
         </form>
@@ -1660,15 +1491,16 @@ function AddModal({
 }
 
 function PatientSelect() {
+  const { patients } = useStore();
   return (
     <label>
       Patient
-      <select required defaultValue="">
+      <select name="cardioId" required defaultValue="">
         <option value="" disabled>
           Sélectionner un patient
         </option>
         {patients.map((patient) => (
-          <option key={patient.id}>
+          <option key={patient.id} value={patient.cardioId}>
             {patient.name} · {patient.cardioId}
           </option>
         ))}
@@ -1678,6 +1510,7 @@ function PatientSelect() {
 }
 
 function AuditView({ onBack }: { onBack: () => void }) {
+  const { audit } = useStore();
   return (
     <section className="audit-view">
       <div className="audit-title">
@@ -1698,7 +1531,7 @@ function AuditView({ onBack }: { onBack: () => void }) {
             <Icon name="shield" />
           </span>
           <p>
-            Événements aujourd’hui<strong>24</strong>
+            Événements aujourd’hui<strong>{audit.length}</strong>
           </p>
         </div>
         <div>
@@ -1706,7 +1539,16 @@ function AuditView({ onBack }: { onBack: () => void }) {
             <Icon name="check" />
           </span>
           <p>
-            Taux de succès<strong>100%</strong>
+            Taux de succès
+            <strong>
+              {audit.length
+                ? `${Math.round(
+                    (audit.filter((r) => !/refus|introuvable/i.test(r.result)).length /
+                      audit.length) *
+                      100,
+                  )}%`
+                : "—"}
+            </strong>
           </p>
         </div>
         <div>
@@ -1714,7 +1556,7 @@ function AuditView({ onBack }: { onBack: () => void }) {
             <Icon name="clock" />
           </span>
           <p>
-            Dernière activité<strong>10:18</strong>
+            Dernière activité<strong>{audit[0]?.time.replace(/^Aujourd’hui,\s*/, "") ?? "—"}</strong>
           </p>
         </div>
       </div>
@@ -1735,8 +1577,8 @@ function AuditView({ onBack }: { onBack: () => void }) {
             <span>Action</span>
             <span>Résultat</span>
           </div>
-          {auditRows.map((row) => (
-            <div className="audit-row" key={row.time + row.action}>
+          {audit.map((row, index) => (
+            <div className="audit-row" key={row.time + row.action + index}>
               <span>{row.time}</span>
               <strong>{row.actor}</strong>
               <span>{row.action}</span>
