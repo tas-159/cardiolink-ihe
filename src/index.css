@@ -2471,3 +2471,117 @@ footer p {
     gap: 6px;
   }
 }
+
+/* ============================================================
+   Login / auth screen polish — bigger type + soft focus ring
+   (overrides the tiny Figma defaults; appended last so it wins)
+   ============================================================ */
+.account-input {
+  height: 52px;
+  padding: 0 14px;
+  gap: 10px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.account-input:focus-within {
+  background: #ffffff;
+  border-color: var(--blue-deep);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-deep) 26%, transparent);
+}
+.login-card .account-input input,
+.add-modal .account-input input {
+  font-size: 15px;
+  color: var(--brown-950);
+}
+.login-card .account-input input:focus,
+.add-modal .account-input input:focus {
+  outline: none;
+}
+.account-input input::placeholder {
+  color: #a99e95;
+}
+
+.login-card {
+  padding: 38px 34px;
+  border-radius: 22px;
+}
+.login-brand {
+  margin-bottom: 28px;
+}
+.login-brand strong {
+  font-size: 22px;
+}
+.logout-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+}
+.login-card .eyebrow {
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.login-card h1 {
+  font-size: 30px;
+  margin: 10px 0 10px;
+}
+.login-card > p {
+  font-size: 14px;
+  margin-bottom: 26px;
+  line-height: 1.6;
+}
+.login-card form label {
+  font-size: 12.5px;
+  gap: 9px;
+}
+.login-card form label + label {
+  margin-top: 16px;
+}
+.login-card form > button {
+  height: 50px;
+  font-size: 15px;
+  margin-top: 18px;
+  border-radius: 12px;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.login-card form > button:hover {
+  background: var(--brown-900);
+}
+.login-card form > button:active {
+  transform: translateY(1px);
+}
+.login-card form > button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.login-error {
+  font-size: 12.5px;
+  padding: 11px 13px;
+}
+.login-demo {
+  margin-top: 20px;
+  gap: 8px;
+}
+.login-demo span {
+  font-size: 10px;
+}
+.login-demo button {
+  font-size: 12.5px;
+}
+.login-card > small {
+  font-size: 11px;
+  margin-top: 26px;
+  padding-top: 18px;
+}
+
+/* "Changer de compte" modal inherits the bigger inputs */
+.account-help {
+  font-size: 12px;
+  margin-bottom: 18px;
+}
+.known-accounts > span {
+  font-size: 10.5px;
+}
+.known-accounts button {
+  font-size: 11px;
+  padding: 7px 11px;
+}
