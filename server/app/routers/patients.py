@@ -1,4 +1,5 @@
 """Patients. Search by name/id = PDQ-style demographic query."""
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,8 +7,8 @@ from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
-from ..models import PatientIdentifier, PatientMaster, User
-from ..schemas import PatientCreate, PatientOut
+from ..models import Note, PatientIdentifier, PatientMaster, User
+from ..schemas import NoteCreate, NoteOut, PatientCreate, PatientOut, StatusUpdate
 from ..security import get_current_user
 from ..serializers import patient_out
 
@@ -60,3 +61,47 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
     write_audit(session, actor=current.name,
                 action=f"Création dossier {cardio}", result="Validé")
     return patient_out(session, pm)
+
+
+@router.post("/{pid}/status", response_model=PatientOut)
+def update_status(pid: int, body: StatusUpdate, session: Session = Depends(get_session),
+                  current: User = Depends(get_current_user)):
+    pm = session.get(PatientMaster, pid)
+    if not pm:
+        raise HTTPException(status_code=404, detail="Patient introuvable")
+    pm.status = body.status.strip() or pm.status
+    session.add(pm)
+    session.commit()
+    write_audit(session, actor=current.name,
+                action=f"Statut {pm.name} : {pm.status}", result="Validé")
+    return patient_out(session, pm)
+
+
+@router.get("/{pid}/notes", response_model=List[NoteOut])
+def list_notes(pid: int, session: Session = Depends(get_session),
+               current: User = Depends(get_current_user)):
+    rows = session.exec(
+        select(Note).where(Note.master_id == pid).order_by(Note.created_at.desc())
+    ).all()
+    return [NoteOut(id=n.id, author=n.author, text=n.text,
+                    time=n.time_label or n.created_at.strftime("%H:%M")) for n in rows]
+
+
+@router.post("/{pid}/notes", response_model=NoteOut, status_code=201)
+def add_note(pid: int, body: NoteCreate, session: Session = Depends(get_session),
+             current: User = Depends(get_current_user)):
+    pm = session.get(PatientMaster, pid)
+    if not pm:
+        raise HTTPException(status_code=404, detail="Patient introuvable")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Note vide")
+    now = datetime.utcnow()
+    note = Note(master_id=pid, author=current.name, text=text,
+                created_at=now, time_label=f"Aujourd'hui, {now.strftime('%H:%M')}")
+    session.add(note)
+    session.commit()
+    session.refresh(note)
+    write_audit(session, actor=current.name,
+                action=f"Note clinique — {pm.name}", result="Validé")
+    return NoteOut(id=note.id, author=note.author, text=note.text, time=note.time_label)

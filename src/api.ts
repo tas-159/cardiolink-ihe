@@ -53,6 +53,14 @@ export const api = {
   exams: () => request("/exams"),
   createExam: (body: unknown) =>
     request("/exams", { method: "POST", body: JSON.stringify(body) }),
+  analyzeExam: (reference: string) =>
+    request(`/exams/${encodeURIComponent(reference)}/analyze`, { method: "POST" }),
+  updatePatientStatus: (pid: number, status: string) =>
+    request(`/patients/${pid}/status`, { method: "POST", body: JSON.stringify({ status }) }),
+  patientNotes: (pid: number) => request(`/patients/${pid}/notes`),
+  addNote: (pid: number, text: string) =>
+    request(`/patients/${pid}/notes`, { method: "POST", body: JSON.stringify({ text }) }),
+  documentContent: (docId: number) => request(`/documents/${docId}/content`),
   studies: () => request("/studies"),
   createStudy: (body: unknown) =>
     request("/studies", { method: "POST", body: JSON.stringify(body) }),

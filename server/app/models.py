@@ -76,3 +76,12 @@ class AuditLog(SQLModel, table=True):
     actor: str
     action: str
     result: str = "Autorisé"
+
+
+class Note(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    master_id: int = Field(foreign_key="patientmaster.id", index=True)
+    author: str
+    text: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    time_label: str = ""

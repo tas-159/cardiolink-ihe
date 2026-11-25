@@ -190,6 +190,7 @@ function App() {
   const [userModal, setUserModal] = useState(false);
   const [notice, setNotice] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
 
   const filteredPatients = useMemo(
     () =>
@@ -381,10 +382,47 @@ function App() {
             <div className="secure-pill">
               <Icon name="lock" size={14} /> Connexion sécurisée
             </div>
-            <button className="bell" aria-label="Notifications">
-              <Icon name="bell" size={19} />
-              <span />
-            </button>
+            <div className="bell-wrap">
+              <button
+                className="bell"
+                aria-label="Notifications"
+                aria-expanded={bellOpen}
+                onClick={() => setBellOpen((value) => !value)}
+              >
+                <Icon name="bell" size={19} />
+                <span />
+              </button>
+              {bellOpen && (
+                <div className="bell-menu">
+                  <div className="bell-head">
+                    <strong>Activité récente</strong>
+                    <button
+                      onClick={() => {
+                        setBellOpen(false);
+                        navigate("Journal d’audit");
+                      }}
+                    >
+                      Tout voir
+                    </button>
+                  </div>
+                  {store.audit.length ? (
+                    store.audit.slice(0, 6).map((row, index) => (
+                      <div className="bell-row" key={row.time + row.action + index}>
+                        <span className="bell-dot" />
+                        <div>
+                          <strong>{row.action}</strong>
+                          <small>
+                            {row.actor} · {row.time}
+                          </small>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="bell-empty">Aucune activité</div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="date">
               <Icon name="calendar" size={17} /> 16 octobre 2026
             </div>
@@ -767,6 +805,40 @@ function PatientRecord({
   onExams: () => void;
   onAction: (message: string) => void;
 }) {
+  const { refresh } = useStore();
+  const [status, setStatus] = useState(patient.status);
+  const [notes, setNotes] = useState<{ id: number; author: string; text: string; time: string }[]>(
+    [],
+  );
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  function reloadNotes() {
+    api
+      .patientNotes(patient.id)
+      .then(setNotes)
+      .catch(() => {});
+  }
+  useEffect(() => {
+    setStatus(patient.status);
+    reloadNotes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patient.id]);
+
+  async function closeConsultation() {
+    setClosing(true);
+    try {
+      await api.updatePatientStatus(patient.id, "Consultation terminée");
+      setStatus("Consultation terminée");
+      await refresh();
+      onAction("Consultation terminée et enregistrée.");
+    } catch (err) {
+      onAction(err instanceof Error ? err.message : "Erreur lors de la mise à jour.");
+    } finally {
+      setClosing(false);
+    }
+  }
+
   return (
     <>
       <PageTitle
@@ -799,7 +871,7 @@ function PatientRecord({
           <button className="exam-button" onClick={onExams}>
             <Icon name="activity" size={18} /> Voir les examens <b>{patient.exams.length}</b>
           </button>
-          <button onClick={() => onAction("Note clinique ajoutée au dossier.")}>
+          <button onClick={() => setNoteOpen(true)}>
             <Icon name="clipboard" size={17} /> Ajouter une note
           </button>
         </div>
@@ -885,17 +957,141 @@ function PatientRecord({
           <Icon name="heart" size={24} />
           <div>
             <span>Prise en charge actuelle</span>
-            <strong>{patient.status}</strong>
+            <strong>{status}</strong>
             <small>
               {patient.reason} · {patient.doctor}
             </small>
           </div>
-          <button onClick={() => onAction("Consultation marquée comme terminée.")}>
-            Terminer la consultation
+          <button onClick={closeConsultation} disabled={closing}>
+            {closing ? "Enregistrement…" : "Terminer la consultation"}
           </button>
         </section>
       </div>
+
+      <section className="panel notes-card">
+        <div className="panel-head">
+          <div>
+            <h2>Notes cliniques</h2>
+            <p>
+              {notes.length} note{notes.length > 1 ? "s" : ""} · tracées dans le journal d’audit
+            </p>
+          </div>
+          <button className="primary-action" onClick={() => setNoteOpen(true)}>
+            <Icon name="clipboard" size={16} /> Ajouter
+          </button>
+        </div>
+        {notes.length ? (
+          notes.map((note) => (
+            <div className="note-row" key={note.id}>
+              <span className="note-icon">
+                <Icon name="clipboard" size={16} />
+              </span>
+              <div>
+                <strong>{note.author}</strong>
+                <small>{note.time}</small>
+                <p>{note.text}</p>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="list-empty">
+            <Icon name="clipboard" size={22} />
+            <strong>Aucune note</strong>
+            <span>Ajoutez une première note clinique à ce dossier.</span>
+          </div>
+        )}
+      </section>
+
+      {noteOpen && (
+        <NoteModal
+          patientId={patient.id}
+          onClose={() => setNoteOpen(false)}
+          onSaved={() => {
+            setNoteOpen(false);
+            reloadNotes();
+            onAction("Note ajoutée au dossier.");
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function NoteModal({
+  patientId,
+  onClose,
+  onSaved,
+}: {
+  patientId: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!text.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.addNote(patientId, text.trim());
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l’enregistrement.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-layer" role="presentation" onMouseDown={onClose}>
+      <section
+        className="add-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="note-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div className="modal-title-icon">
+            <Icon name="clipboard" size={20} />
+          </div>
+          <div>
+            <span>DOSSIER PATIENT</span>
+            <h2 id="note-modal-title">Ajouter une note clinique</h2>
+          </div>
+          <button onClick={onClose} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <label>
+            Note
+            <textarea
+              autoFocus
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Observation clinique, conduite à tenir…"
+              rows={4}
+            />
+          </label>
+          {error && <div className="login-error">{error}</div>}
+          <div className="modal-note">
+            <Icon name="shield" size={15} />
+            La note sera enregistrée et tracée dans le journal d’audit.
+          </div>
+          <div className="modal-actions">
+            <button type="button" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="submit" disabled={busy}>
+              {busy ? "Enregistrement…" : "Enregistrer la note"} <Icon name="arrow" size={16} />
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -910,8 +1106,19 @@ function ExamsView({
   onAction: (message: string) => void;
   onAdd: () => void;
 }) {
-  const { patients } = useStore();
-  const displayed = patient ? [patient] : patients;
+  const { patients, refresh } = useStore();
+  const owner = patient ? (patients.find((p) => p.id === patient.id) ?? patient) : null;
+  const displayed = owner ? [owner] : patients;
+
+  async function analyze(reference: string) {
+    try {
+      await api.analyzeExam(reference);
+      await refresh();
+      onAction(`Examen ${reference} marqué comme analysé.`);
+    } catch (err) {
+      onAction(err instanceof Error ? err.message : "Erreur lors de l’analyse.");
+    }
+  }
   return (
     <>
       <PageTitle
@@ -968,7 +1175,7 @@ function ExamsView({
                   <i />
                   {exam.status}
                 </span>
-                <button onClick={() => onAction(`Analyse de ${exam.reference} ouverte.`)}>
+                <button onClick={() => analyze(exam.reference)}>
                   Analyser <Icon name="chevron" size={14} />
                 </button>
               </div>
@@ -1111,6 +1318,27 @@ function DocumentsView({
   onAdd: () => void;
 }) {
   const { documents } = useStore();
+  const [viewer, setViewer] = useState<{
+    title: string;
+    patientName: string;
+    docType: string;
+    date: string;
+    author: string;
+    content: string;
+  } | null>(null);
+  const [loadingId, setLoadingId] = useState<number | null>(null);
+
+  async function openDoc(docId: number) {
+    setLoadingId(docId);
+    try {
+      setViewer((await api.documentContent(docId)) as typeof viewer);
+    } catch (err) {
+      onAction(err instanceof Error ? err.message : "Document indisponible.");
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
   return (
     <>
       <PageTitle
@@ -1125,10 +1353,7 @@ function DocumentsView({
       />
       <section className="panel document-list">
         {documents.map((doc) => (
-          <button
-            key={doc.id}
-            onClick={() => onAction(`${doc.title} ouvert en lecture sécurisée.`)}
-          >
+          <button key={doc.id} onClick={() => openDoc(doc.id)} disabled={loadingId === doc.id}>
             <span className="doc-icon">
               <Icon name="document" size={20} />
             </span>
@@ -1143,6 +1368,36 @@ function DocumentsView({
           </button>
         ))}
       </section>
+      {viewer && (
+        <div className="modal-layer" role="presentation" onMouseDown={() => setViewer(null)}>
+          <section
+            className="add-modal doc-viewer"
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div className="modal-title-icon">
+                <Icon name="document" size={20} />
+              </div>
+              <div>
+                <span>
+                  {viewer.docType} · {viewer.date}
+                </span>
+                <h2>{viewer.title}</h2>
+              </div>
+              <button onClick={() => setViewer(null)} aria-label="Fermer">
+                ×
+              </button>
+            </div>
+            <pre className="doc-content">{viewer.content}</pre>
+            <div className="modal-note">
+              <Icon name="shield" size={15} />
+              Document partagé via IHE XDS.b · accès tracé (ATNA).
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

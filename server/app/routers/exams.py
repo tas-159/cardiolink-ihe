@@ -47,6 +47,21 @@ def list_exams(session: Session = Depends(get_session),
     return result
 
 
+@router.post("/{reference}/analyze", response_model=ExamOut)
+def analyze_exam(reference: str, session: Session = Depends(get_session),
+                 current: User = Depends(get_current_user)):
+    exam = session.exec(select(Exam).where(Exam.reference == reference)).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Examen introuvable")
+    exam.status = "Analysé"
+    session.add(exam)
+    session.commit()
+    session.refresh(exam)
+    write_audit(session, actor=current.name,
+                action=f"Analyse examen {reference}", result="Validé")
+    return exam_out(exam)
+
+
 @router.post("", response_model=ExamOut, status_code=201)
 def create_exam(body: ExamCreate, session: Session = Depends(get_session),
                 current: User = Depends(get_current_user)):

@@ -159,3 +159,27 @@ class UserCreate(BaseModel):
     name: str
     role: str
     initials: Optional[str] = None
+
+
+class NoteOut(BaseModel):
+    id: int
+    author: str
+    text: str
+    time: str
+
+
+class NoteCreate(BaseModel):
+    text: str
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+class DocContentOut(BaseModel):
+    title: str
+    patientName: str
+    docType: str
+    date: str
+    author: str
+    content: str
