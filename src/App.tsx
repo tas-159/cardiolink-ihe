@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-import { api } from "./api";
+import { api, studyThumbUrl } from "./api";
 import { cornerstone, initCornerstone, studyImageId } from "./dicom";
 import { useStore } from "./store";
 import type { Patient, StudyRow } from "./types";
@@ -1234,6 +1234,38 @@ function ExamsView({
   );
 }
 
+function ScanThumb({ reference }: { reference: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    let made: string | null = null;
+    studyThumbUrl(reference)
+      .then((u) => {
+        if (active) {
+          made = u;
+          setUrl(u);
+        } else {
+          URL.revokeObjectURL(u);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [reference]);
+  return (
+    <div className="scan-preview">
+      {url ? (
+        <img src={url} alt={`Aperçu DICOM ${reference}`} className="scan-thumb" />
+      ) : (
+        <Icon name="heart" size={38} />
+      )}
+      <span>DICOM</span>
+    </div>
+  );
+}
+
 function PacsView({ onAdd }: { onAdd: () => void }) {
   const { studies } = useStore();
   const [viewer, setViewer] = useState<StudyRow | null>(null);
@@ -1252,10 +1284,7 @@ function PacsView({ onAdd }: { onAdd: () => void }) {
       <div className="pacs-grid">
         {studies.map((study) => (
           <article className="panel pacs-card" key={study.reference}>
-            <div className="scan-preview">
-              <Icon name="heart" size={38} />
-              <span>DICOM</span>
-            </div>
+            <ScanThumb reference={study.reference} />
             <div>
               <small>{study.reference}</small>
               <h3>{study.type}</h3>

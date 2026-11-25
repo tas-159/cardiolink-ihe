@@ -1767,6 +1767,15 @@ footer p {
 .scan-preview svg {
   filter: drop-shadow(0 0 14px rgba(185, 226, 236, 0.4));
 }
+.scan-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+  display: block;
+}
 .scan-preview span {
   position: absolute;
   top: 10px;

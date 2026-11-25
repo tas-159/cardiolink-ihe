@@ -75,3 +75,12 @@ export const api = {
   pixAddIdentifier: (body: unknown) =>
     request("/pix/identifiers", { method: "POST", body: JSON.stringify(body) }),
 };
+
+// Fetch a study's PNG preview with auth and return an object URL for <img>.
+export async function studyThumbUrl(reference: string): Promise<string> {
+  const res = await fetch(`${BASE}/studies/${encodeURIComponent(reference)}/thumbnail`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+  });
+  if (!res.ok) throw new Error("thumbnail");
+  return URL.createObjectURL(await res.blob());
+}

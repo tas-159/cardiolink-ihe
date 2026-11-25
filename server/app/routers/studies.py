@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
-from ..dicom_gen import ensure_dicom
+from ..dicom_gen import ensure_dicom, ensure_thumbnail
 from ..models import Exam, PatientIdentifier, PatientMaster, User
 from ..schemas import StudyCreate, StudyOut
 from ..security import get_current_user
@@ -52,6 +52,20 @@ def study_file(reference: str, session: Session = Depends(get_session),
     pm = session.get(PatientMaster, exam.master_id)
     path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type)
     return FileResponse(path, media_type="application/dicom", filename=f"{reference}.dcm")
+
+
+@router.get("/{reference}/thumbnail", tags=["studies (PACS)"])
+def study_thumbnail(reference: str, session: Session = Depends(get_session),
+                    current: User = Depends(get_current_user)):
+    """Serve a small PNG preview of the study for the PACS gallery cards."""
+    exam = session.exec(
+        select(Exam).where(Exam.reference == reference, Exam.modality == "image")
+    ).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Étude introuvable")
+    pm = session.get(PatientMaster, exam.master_id)
+    path = ensure_thumbnail(reference, pm.name if pm else "Anonyme", exam.type)
+    return FileResponse(path, media_type="image/png")
 
 
 @router.post("", response_model=StudyOut, status_code=201)
