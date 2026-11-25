@@ -110,6 +110,9 @@ def seed_if_empty() -> None:
             session.add(PatientIdentifier(master_id=pm.id, domain="HIS", local_id=p["hisId"]))
             session.add(PatientIdentifier(master_id=pm.id, domain="CARDIO", local_id=p["cardioId"]))
 
+            first_ecg = next((e for e in p["exams"] if e[2].startswith("ECG")), None)
+            if first_ecg:
+                session.add(PatientIdentifier(master_id=pm.id, domain="ECG", local_id=first_ecg[2]))
             first_lab = next((e for e in p["exams"] if e[2].startswith("LAB")), None)
             first_img = next((e for e in p["exams"] if e[5] == "image"), None)
             if first_lab:
@@ -132,5 +135,62 @@ def seed_if_empty() -> None:
 
         for time_label, actor, action, result in AUDIT:
             session.add(AuditLog(time_label=time_label, actor=actor, action=action, result=result))
+
+        session.commit()
+
+
+def ensure_pix_data() -> None:
+    """Idempotent upgrade so any existing database matches the PIX demo:
+    backfill ECG/LABO/PACS domain identifiers, add a homonym test patient
+    (ambiguous case, PIX-004), and mark one patient inactive (PIX-008)."""
+    with Session(engine) as session:
+        patients = session.exec(select(PatientMaster)).all()
+        if not patients:
+            return
+
+        # Backfill domain identifiers from exams for every patient.
+        for pm in patients:
+            domains = {
+                r.domain for r in session.exec(
+                    select(PatientIdentifier).where(PatientIdentifier.master_id == pm.id)
+                ).all()
+            }
+            exams = session.exec(select(Exam).where(Exam.master_id == pm.id)).all()
+
+            def add(domain, ref):
+                if ref and domain not in domains:
+                    session.add(PatientIdentifier(master_id=pm.id, domain=domain, local_id=ref))
+                    domains.add(domain)
+
+            add("ECG", next((e.reference for e in exams if e.reference.startswith("ECG")), None))
+            add("LABO", next((e.reference for e in exams if e.reference.startswith("LAB")), None))
+            add("PACS", next((e.reference for e in exams if e.modality == "image"), None))
+
+        # Mark one patient inactive to demonstrate PIX-008.
+        youssef = session.exec(
+            select(PatientMaster).where(PatientMaster.master_id == "MASTER-52")
+        ).first()
+        if youssef and youssef.active:
+            youssef.active = False
+            youssef.status = "Dossier clôturé (inactif)"
+            session.add(youssef)
+
+        # Add a homonym test patient to demonstrate the ambiguous case (PIX-004).
+        homonym = session.exec(
+            select(PatientMaster).where(PatientMaster.master_id == "MASTER-99")
+        ).first()
+        if not homonym:
+            hm = PatientMaster(
+                master_id="MASTER-99", initials="AB", name="Amine Ben Ali", gender="Homme",
+                birth="4 mars 1991", age=35, phone="+216 24 118 663",
+                address="30 rue de Marseille, Tunis", blood="A-", allergies="Aucune connue",
+                doctor="Dr Sami Gharbi", reason="Homonyme — cas de test PIX",
+                admission="—", status="Dossier distinct", active=True,
+            )
+            session.add(hm)
+            session.commit()
+            session.refresh(hm)
+            session.add(PatientIdentifier(master_id=hm.id, domain="HIS", local_id="HIS-050"))
+            session.add(PatientIdentifier(master_id=hm.id, domain="CARDIO", local_id="CARD-090"))
 
         session.commit()

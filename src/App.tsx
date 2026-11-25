@@ -1,8 +1,17 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
+import { api } from "./api";
 import { cornerstone, initCornerstone, studyImageId } from "./dicom";
 import { useStore } from "./store";
 import type { Patient, StudyRow } from "./types";
+
+const DOMAIN_LABELS: Record<string, string> = {
+  HIS: "Administration (HIS)",
+  CARDIO: "Cardiologie",
+  ECG: "ECG",
+  LABO: "Laboratoire",
+  PACS: "Imagerie (PACS)",
+};
 
 type IconName =
   | "activity"
@@ -210,6 +219,7 @@ function App() {
     ["Examens", "activity"],
     ["Imagerie PACS", "image"],
     ["Documents", "document"],
+    ["Identité PIX", "link"],
     ["Journal d’audit", "shield"],
     ["Utilisateurs", "users"],
   ] as [string, IconName][];
@@ -269,7 +279,7 @@ function App() {
 
         <nav className="main-nav" aria-label="Navigation principale">
           <p>ESPACE CLINIQUE</p>
-          {nav.slice(0, 5).map(([label, icon]) => (
+          {nav.slice(0, 6).map(([label, icon]) => (
             <button
               key={label}
               className={active === label ? "active" : ""}
@@ -281,7 +291,7 @@ function App() {
             </button>
           ))}
           <p>SÉCURITÉ</p>
-          {nav.slice(5).map(([label, icon]) => (
+          {nav.slice(6).map(([label, icon]) => (
             <button
               key={label}
               className={active === label ? "active" : ""}
@@ -386,6 +396,8 @@ function App() {
             <AuditView onBack={() => setActive("Vue d’ensemble")} />
           ) : active === "Utilisateurs" ? (
             <UsersView onAdd={() => setUserModal(true)} />
+          ) : active === "Identité PIX" ? (
+            <PixView onNavigate={navigate} onAction={showAction} />
           ) : active === "Patients" ? (
             selectedPatient ? (
               <PatientRecord
@@ -1973,6 +1985,374 @@ function UserModal({
             </button>
             <button type="submit" disabled={busy}>
               {busy ? "Création…" : "Créer le compte"} <Icon name="arrow" size={16} />
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+type PixIdentifier = { domain: string; local_id: string };
+type PixResult = {
+  mode: "identifier" | "ambiguous" | "notfound";
+  query: string;
+  master?: string;
+  name?: string;
+  birth?: string;
+  active?: boolean;
+  identifiers: PixIdentifier[];
+  candidates: { master: string; name: string; birth: string }[];
+};
+type DomainInfo = { code: string; name: string; oid: string; count: number };
+
+function initialsOf(name: string) {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase() || "?"
+  );
+}
+
+function PixView({
+  onNavigate,
+  onAction,
+}: {
+  onNavigate: (label: string) => void;
+  onAction: (message: string) => void;
+}) {
+  const { pix } = useStore();
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState<PixResult | null>(null);
+  const [hl7, setHl7] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [domains, setDomains] = useState<DomainInfo[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+
+  function loadDomains() {
+    api.pixDomains().then(setDomains).catch(() => {});
+  }
+  useEffect(loadDomains, []);
+
+  async function search(event?: FormEvent) {
+    event?.preventDefault();
+    if (!query.trim()) return;
+    setLoading(true);
+    setError("");
+    setHl7(null);
+    try {
+      setResult((await api.pixResolve(query.trim())) as PixResult);
+    } catch (err) {
+      setResult(null);
+      setError(err instanceof Error ? err.message : "Erreur réseau");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function viewHl7(result: PixResult) {
+    const ref =
+      result.identifiers.find((i) => i.domain === "CARDIO")?.local_id ??
+      result.identifiers[0]?.local_id;
+    if (!ref) return;
+    try {
+      const res = await api.pixHl7(ref);
+      setHl7((res as { hl7: string }).hl7);
+    } catch {
+      onAction("Message HL7 indisponible.");
+    }
+  }
+
+  function openDomain(domain: string) {
+    const map: Record<string, string> = {
+      PACS: "Imagerie PACS",
+      ECG: "Examens",
+      LABO: "Examens",
+      CARDIO: "Patients",
+      HIS: "Patients",
+    };
+    onNavigate(map[domain] ?? "Patients");
+  }
+
+  const oidOf = (code: string) => domains.find((d) => d.code === code)?.oid ?? "";
+
+  return (
+    <>
+      <PageTitle
+        eyebrow="IHE PIX · ITI-9"
+        title="Identité patient (PIX)"
+        subtitle="Rapprochement des identifiants d’un même patient entre domaines (HIS · Cardiologie · ECG · PACS)."
+        action={
+          <button className="primary-action" onClick={() => setAddOpen(true)}>
+            <Icon name="link" size={16} /> Ajouter un identifiant
+          </button>
+        }
+      />
+
+      <section className="panel pix-search-panel">
+        <div className="manager-status pix-manager">
+          <div className="status-icon">
+            <Icon name="database" size={20} />
+          </div>
+          <div>
+            <span>PIX Manager</span>
+            <strong>
+              <i /> {pix ? pix.status : "…"}
+            </strong>
+          </div>
+          <small>{pix ? `${pix.latency_ms} ms` : "—"}</small>
+        </div>
+        <form className="pix-search" onSubmit={search}>
+          <label className="query-input">
+            <Icon name="search" size={18} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Identifiant (ex. CARD-025) ou nom du patient"
+            />
+          </label>
+          <button type="submit" disabled={loading}>
+            {loading ? "Recherche…" : "Interroger PIX"} <Icon name="arrow" size={16} />
+          </button>
+        </form>
+        <div className="pix-examples">
+          <span>Exemples :</span>
+          <button type="button" onClick={() => setQuery("CARD-025")}>
+            CARD-025
+          </button>
+          <button type="button" onClick={() => setQuery("Amine Ben Ali")}>
+            cas ambigu
+          </button>
+          <button type="button" onClick={() => setQuery("ZZZ-000")}>
+            introuvable
+          </button>
+        </div>
+        {error && <div className="login-error">{error}</div>}
+      </section>
+
+      {result?.mode === "identifier" && (
+        <section className="panel pix-result">
+          <div className="pix-identity">
+            <div className="patient-avatar large">
+              <span>{initialsOf(result.name ?? "?")}</span>
+              <i>
+                <Icon name="check" size={12} />
+              </i>
+            </div>
+            <div>
+              <div className="verified">
+                <Icon name="shield" size={13} /> IDENTITÉ MAÎTRE · {result.master}
+              </div>
+              <h2>
+                {result.name}
+                {result.active === false && <em className="pix-inactive">Inactif</em>}
+              </h2>
+              <p>Né le {result.birth}</p>
+            </div>
+            <button className="pix-hl7-btn" onClick={() => viewHl7(result)}>
+              <Icon name="document" size={16} /> Voir le message HL7
+            </button>
+          </div>
+
+          <div className="audit-table pix-ids">
+            <div className="audit-row header">
+              <span>Domaine</span>
+              <span>Identifiant</span>
+              <span>OID</span>
+              <span />
+            </div>
+            {result.identifiers.map((id) => (
+              <div className="audit-row" key={id.domain + id.local_id}>
+                <strong>{DOMAIN_LABELS[id.domain] ?? id.domain}</strong>
+                <span className="mono">{id.local_id}</span>
+                <span className="mono dim">{oidOf(id.domain)}</span>
+                <button onClick={() => openDomain(id.domain)}>
+                  Ouvrir <Icon name="chevron" size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {hl7 && (
+            <div className="hl7-wrap">
+              <div className="hl7-label">Message HL7 v2 simulé (ADT^A08)</div>
+              <pre className="hl7-block">{hl7}</pre>
+            </div>
+          )}
+        </section>
+      )}
+
+      {result?.mode === "ambiguous" && (
+        <section className="panel pix-result">
+          <div className="pix-alert">
+            <Icon name="shield" size={22} />
+            <div>
+              <strong>Cas ambigu — rapprochement refusé</strong>
+              <p>
+                {result.candidates.length} patients correspondent à « {result.query} ». PIX ne
+                fusionne jamais sur le seul nom : une validation humaine est requise.
+              </p>
+            </div>
+          </div>
+          <div className="audit-table">
+            <div className="audit-row header">
+              <span>Identité maître</span>
+              <span>Nom</span>
+              <span>Naissance</span>
+            </div>
+            {result.candidates.map((candidate) => (
+              <div className="audit-row" key={candidate.master}>
+                <strong>{candidate.master}</strong>
+                <span>{candidate.name}</span>
+                <span>{candidate.birth}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {result?.mode === "notfound" && (
+        <section className="panel pix-notfound">
+          <Icon name="search" size={24} />
+          <strong>Patient non trouvé</strong>
+          <span>Aucun identifiant « {result.query} » n’est connu du PIX Manager.</span>
+        </section>
+      )}
+
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Domaines d’identification</h2>
+            <p>Chaque identifiant est toujours associé à un domaine (règle PIX).</p>
+          </div>
+        </div>
+        <div className="pix-domains">
+          {domains.map((domain) => (
+            <div key={domain.code}>
+              <strong>{domain.name}</strong>
+              <small className="mono">{domain.oid}</small>
+              <b>{domain.count}</b>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {addOpen && (
+        <AddIdentifierModal
+          onClose={() => setAddOpen(false)}
+          onAdded={(updated) => {
+            setAddOpen(false);
+            setResult(updated);
+            setHl7(null);
+            loadDomains();
+            onAction("Identifiant ajouté et rapproché dans PIX.");
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function AddIdentifierModal({
+  onClose,
+  onAdded,
+}: {
+  onClose: () => void;
+  onAdded: (updated: PixResult) => void;
+}) {
+  const { patients } = useStore();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    const get = (key: string) => String(fd.get(key) ?? "").trim();
+    setBusy(true);
+    setError("");
+    try {
+      const updated = (await api.pixAddIdentifier({
+        patient_ref: get("patient_ref"),
+        domain: get("domain"),
+        local_id: get("local_id"),
+      })) as PixResult;
+      onAdded(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l’ajout.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-layer" role="presentation" onMouseDown={onClose}>
+      <section
+        className="add-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="identifier-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div className="modal-title-icon">
+            <Icon name="link" size={20} />
+          </div>
+          <div>
+            <span>RAPPROCHEMENT PIX</span>
+            <h2 id="identifier-modal-title">Ajouter un identifiant</h2>
+          </div>
+          <button onClick={onClose} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="form-grid">
+            <label>
+              Patient (identité connue)
+              <select name="patient_ref" required defaultValue="">
+                <option value="" disabled>
+                  Sélectionner un patient
+                </option>
+                {patients.map((patient) => (
+                  <option key={patient.id} value={patient.cardioId}>
+                    {patient.name} · {patient.cardioId}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Domaine cible
+              <select name="domain" required defaultValue="">
+                <option value="" disabled>
+                  Sélectionner
+                </option>
+                <option value="HIS">Administration (HIS)</option>
+                <option value="CARDIO">Cardiologie</option>
+                <option value="ECG">ECG</option>
+                <option value="LABO">Laboratoire</option>
+                <option value="PACS">Imagerie (PACS)</option>
+              </select>
+            </label>
+            <label className="full-field">
+              Nouvel identifiant
+              <input name="local_id" required placeholder="Ex. PACS-960" />
+            </label>
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <div className="modal-note">
+            <Icon name="shield" size={15} />
+            L’ajout sera rapproché à l’identité maître et journalisé (ATNA).
+          </div>
+          <div className="modal-actions">
+            <button type="button" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="submit" disabled={busy}>
+              {busy ? "Ajout…" : "Ajouter l’identifiant"} <Icon name="arrow" size={16} />
             </button>
           </div>
         </form>

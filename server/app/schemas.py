@@ -88,6 +88,35 @@ class PixStatusOut(BaseModel):
     patients: int
 
 
+class DomainOut(BaseModel):
+    code: str
+    name: str
+    oid: str
+    count: int
+
+
+class PixResolveOut(BaseModel):
+    mode: str  # "identifier" | "ambiguous" | "notfound"
+    query: str
+    master: Optional[str] = None
+    name: Optional[str] = None
+    birth: Optional[str] = None
+    active: Optional[bool] = None
+    identifiers: List[dict] = []
+    candidates: List[dict] = []
+
+
+class HL7Out(BaseModel):
+    identifier: str
+    hl7: str
+
+
+class IdentifierCreate(BaseModel):
+    patient_ref: str  # any existing local id of the patient (e.g. CARD-025)
+    domain: str
+    local_id: str
+
+
 # ---------- requests ----------
 class LoginRequest(BaseModel):
     identifier: str

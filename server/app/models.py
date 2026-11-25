@@ -37,6 +37,7 @@ class PatientMaster(SQLModel, table=True):
     reason: str = ""
     admission: str = ""
     status: str = ""
+    active: bool = True
 
 
 class PatientIdentifier(SQLModel, table=True):

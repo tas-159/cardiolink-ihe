@@ -61,5 +61,9 @@ export const api = {
     request("/documents", { method: "POST", body: JSON.stringify(body) }),
   audit: () => request("/audit"),
   pixStatus: () => request("/pix/status"),
-  pixQuery: (identifier: string) => request(`/pix/${encodeURIComponent(identifier)}`),
+  pixResolve: (q: string) => request(`/pix/resolve?q=${encodeURIComponent(q)}`),
+  pixDomains: () => request("/pix/domains"),
+  pixHl7: (identifier: string) => request(`/pix/${encodeURIComponent(identifier)}/hl7`),
+  pixAddIdentifier: (body: unknown) =>
+    request("/pix/identifiers", { method: "POST", body: JSON.stringify(body) }),
 };

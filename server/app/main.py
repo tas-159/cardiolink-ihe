@@ -9,15 +9,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS
-from .database import init_db
+from .database import ensure_schema, init_db
 from .routers import audit, auth, documents, exams, patients, pix, studies
-from .seed import seed_if_empty
+from .seed import ensure_pix_data, seed_if_empty
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ensure_schema()
     seed_if_empty()
+    ensure_pix_data()
     yield
 
 
