@@ -68,3 +68,29 @@ def create_user(body: UserCreate, session: Session = Depends(get_session),
                 action=f"Création compte {identifier}", result="Validé")
     return UserOut(identifier=user.identifier, name=user.name,
                    role=user.role, initials=user.initials)
+
+
+@router.post("/register", response_model=TokenOut, status_code=201)
+def register(body: UserCreate, session: Session = Depends(get_session)):
+    """Public self-registration from the login screen. Returns a token so the
+    new user is logged in immediately."""
+    identifier = body.identifier.strip().upper()
+    if not identifier or not body.password or not body.name.strip():
+        raise HTTPException(status_code=400, detail="Identifiant, nom et mot de passe sont requis.")
+    if session.exec(select(User).where(User.identifier == identifier)).first():
+        raise HTTPException(status_code=409, detail="Cet identifiant existe déjà.")
+    initials = (body.initials or "".join(w[0] for w in body.name.split()[:2])).upper()[:2] or "??"
+    user = User(
+        identifier=identifier, password_hash=hash_password(body.password),
+        name=body.name.strip(), role=body.role.strip() or "Utilisateur", initials=initials,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    write_audit(session, actor=user.name, action=f"Auto-inscription {identifier}", result="Validé")
+    token = create_access_token(user.identifier)
+    return TokenOut(
+        access_token=token,
+        user=UserOut(identifier=user.identifier, name=user.name,
+                     role=user.role, initials=user.initials),
+    )

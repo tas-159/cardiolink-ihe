@@ -24,6 +24,7 @@ type Store = {
   pix: PixStatus | null;
   error: string;
   login: (identifier: string, password: string) => Promise<boolean>;
+  register: (body: unknown) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
   createPatient: (body: unknown) => Promise<void>;
@@ -141,6 +142,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const register = useCallback(async (body: unknown) => {
+    // Throws on error (e.g. 409 duplicate) so the modal can show the message.
+    const res = await api.register(body);
+    try {
+      localStorage.setItem(TOKEN_KEY, res.access_token);
+    } catch {
+      /* ignore */
+    }
+    setUser(res.user);
+    setTok(res.access_token); // triggers the effect -> refresh()
+    setError("");
+  }, []);
+
   const logout = useCallback(() => {
     setTok(null);
     setUser(null);
@@ -205,6 +219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     pix,
     error,
     login,
+    register,
     logout,
     refresh,
     createPatient,

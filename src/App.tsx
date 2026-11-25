@@ -15,6 +15,8 @@ type IconName =
   | "clock"
   | "database"
   | "document"
+  | "eye"
+  | "eyeOff"
   | "heart"
   | "image"
   | "lab"
@@ -70,6 +72,19 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M6 2h8l4 4v16H6z" />
       <path d="M14 2v5h5M9 13h6M9 17h6" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  eyeOff: (
+    <>
+      <path d="m3 3 18 18" />
+      <path d="M10.6 10.6a3 3 0 0 0 4.2 4.2" />
+      <path d="M9.9 4.6A10.8 10.8 0 0 1 12 4.5c6.5 0 10 7 10 7a18 18 0 0 1-3.2 3.9M6.3 6.3A18 18 0 0 0 2 11.5s3.5 7 10 7a10.8 10.8 0 0 0 4-.8" />
     </>
   ),
   heart: (
@@ -1249,6 +1264,8 @@ function LoggedOutScreen({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1269,12 +1286,6 @@ function LoggedOutScreen({
           <strong>
             Cardio<span>Link</span>
           </strong>
-        </div>
-        <div className="logout-icon">
-          <Icon name="lock" size={25} />
-        </div>
-        <div className="eyebrow">
-          <span /> SESSION FERMÉE
         </div>
         <h1>Vous êtes déconnecté</h1>
         <p>Entrez votre identifiant professionnel pour accéder à l’espace clinique.</p>
@@ -1298,11 +1309,19 @@ function LoggedOutScreen({
               <Icon name="lock" size={18} />
               <input
                 required
-                type="password"
+                type={showPass ? "text" : "password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Votre mot de passe"
               />
+              <button
+                type="button"
+                className="toggle-pass"
+                onClick={() => setShowPass((value) => !value)}
+                aria-label={showPass ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+              >
+                <Icon name={showPass ? "eyeOff" : "eye"} size={18} />
+              </button>
             </span>
           </label>
           {error && <div className="login-error">{error}</div>}
@@ -1322,11 +1341,133 @@ function LoggedOutScreen({
             Utiliser le compte Dr Léa Martin
           </button>
         </div>
+        <button className="register-cta" onClick={() => setShowRegister(true)}>
+          <Icon name="user" size={16} /> Créer un compte
+        </button>
+        <div className="logout-bottom">
+          <div className="logout-icon">
+            <Icon name="lock" size={22} />
+          </div>
+          <div className="eyebrow">
+            <span /> SESSION FERMÉE
+          </div>
+        </div>
         <small>
           <Icon name="shield" size={14} /> Connexion sécurisée · IHE ATNA
         </small>
       </section>
+      {showRegister && <RegisterModal onClose={() => setShowRegister(false)} />}
     </main>
+  );
+}
+
+function RegisterModal({ onClose }: { onClose: () => void }) {
+  const store = useStore();
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    const get = (key: string) => String(fd.get(key) ?? "").trim();
+    setBusy(true);
+    setError("");
+    try {
+      // On success the store sets the token/user and this screen unmounts.
+      await store.register({
+        identifier: get("identifier"),
+        name: get("name"),
+        role: get("role"),
+        password: get("password"),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la création du compte.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-layer" role="presentation" onMouseDown={onClose}>
+      <section
+        className="add-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="register-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div className="modal-title-icon">
+            <Icon name="user" size={20} />
+          </div>
+          <div>
+            <span>NOUVEL ACCÈS</span>
+            <h2 id="register-modal-title">Créer un compte</h2>
+          </div>
+          <button onClick={onClose} aria-label="Fermer">
+            ×
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="form-grid">
+            <label>
+              Identifiant
+              <input name="identifier" required placeholder="Ex. AB-312" />
+            </label>
+            <label>
+              Nom complet
+              <input name="name" required placeholder="Ex. Dr Ahmed Brahmi" />
+            </label>
+            <label>
+              Rôle
+              <select name="role" required defaultValue="">
+                <option value="" disabled>
+                  Sélectionner
+                </option>
+                <option>Cardiologue</option>
+                <option>Infirmière coordinatrice</option>
+                <option>Radiologue</option>
+                <option>Technicien</option>
+                <option>Administrateur</option>
+              </select>
+            </label>
+            <label>
+              Mot de passe
+              <span className="account-input">
+                <Icon name="lock" size={18} />
+                <input
+                  name="password"
+                  required
+                  type={showPass ? "text" : "password"}
+                  placeholder="Mot de passe"
+                />
+                <button
+                  type="button"
+                  className="toggle-pass"
+                  onClick={() => setShowPass((value) => !value)}
+                  aria-label={showPass ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                >
+                  <Icon name={showPass ? "eyeOff" : "eye"} size={18} />
+                </button>
+              </span>
+            </label>
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <div className="modal-note">
+            <Icon name="shield" size={15} />
+            La création de compte sera enregistrée dans le journal d’audit.
+          </div>
+          <div className="modal-actions">
+            <button type="button" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="submit" disabled={busy}>
+              {busy ? "Création…" : "Créer le compte"} <Icon name="arrow" size={16} />
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 
