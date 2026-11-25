@@ -2814,3 +2814,7 @@ footer p {
 .bell-row strong { display: block; font-size: 12.5px; }
 .bell-row small { color: #8a7d72; font-size: 11px; }
 .bell-empty { padding: 16px; text-align: center; color: #8a7d72; font-size: 12.5px; }
+
+/* Phase B — PIX identifiers inside the patient record */
+.record-ids.pix { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.ids-card .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -195,7 +195,7 @@ function App() {
   const filteredPatients = useMemo(
     () =>
       patients.filter((patient) =>
-        [patient.name, patient.cardioId, patient.hisId, patient.master]
+        [patient.name, patient.birth, patient.cardioId, patient.hisId, patient.master]
           .join(" ")
           .toLowerCase()
           .includes(query.trim().toLowerCase()),
@@ -618,7 +618,7 @@ function Overview({
           </div>
           <div>
             <h2>Rechercher un dossier patient</h2>
-            <p>Nom, identifiant cardiologie, HIS ou référence maître.</p>
+            <p>Nom, date de naissance ou identifiant — recherche PDQ (ITI-21).</p>
           </div>
         </div>
         <div className="search-row overview-search-row">
@@ -715,11 +715,11 @@ function PatientsView({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher par nom ou identifiant…"
+              placeholder="Rechercher par nom, date de naissance ou identifiant…"
             />
           </label>
           <span>
-            <Icon name="shield" size={15} /> Identités vérifiées par PIX
+            <Icon name="search" size={15} /> Recherche démographique · PDQ (ITI-21)
           </span>
         </div>
         <div className="patients-table-head">
@@ -812,6 +812,8 @@ function PatientRecord({
   );
   const [noteOpen, setNoteOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [identifiers, setIdentifiers] = useState<{ domain: string; local_id: string }[]>([]);
+  const [hl7, setHl7] = useState<string | null>(null);
 
   function reloadNotes() {
     api
@@ -822,8 +824,23 @@ function PatientRecord({
   useEffect(() => {
     setStatus(patient.status);
     reloadNotes();
+    api
+      .pixResolve(patient.cardioId)
+      .then((r) =>
+        setIdentifiers((r as { identifiers: { domain: string; local_id: string }[] }).identifiers ?? []),
+      )
+      .catch(() => setIdentifiers([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patient.id]);
+
+  async function showHl7() {
+    try {
+      const res = await api.pixHl7(patient.cardioId);
+      setHl7((res as { hl7: string }).hl7);
+    } catch {
+      onAction("Message HL7 indisponible.");
+    }
+  }
 
   async function closeConsultation() {
     setClosing(true);
@@ -934,23 +951,24 @@ function PatientRecord({
         <section className="panel ids-card">
           <div className="panel-head">
             <div>
-              <h2>Références du dossier</h2>
-              <p>Identifiants techniques associés au patient</p>
+              <h2>Références PIX du dossier</h2>
+              <p>Identifiants rapprochés par domaine (IHE PIX · ITI-9)</p>
             </div>
+            <button className="pix-hl7-btn" onClick={showHl7}>
+              <Icon name="document" size={15} /> Message HL7
+            </button>
           </div>
-          <div className="record-ids">
+          <div className="record-ids pix">
             <div>
               <span>Identité maître</span>
               <strong>{patient.master}</strong>
             </div>
-            <div>
-              <span>Cardiologie</span>
-              <strong>{patient.cardioId}</strong>
-            </div>
-            <div>
-              <span>Administration HIS</span>
-              <strong>{patient.hisId}</strong>
-            </div>
+            {identifiers.map((id) => (
+              <div key={id.domain + id.local_id}>
+                <span>{DOMAIN_LABELS[id.domain] ?? id.domain}</span>
+                <strong>{id.local_id}</strong>
+              </div>
+            ))}
           </div>
         </section>
         <section className="panel care-card">
@@ -1001,6 +1019,35 @@ function PatientRecord({
           </div>
         )}
       </section>
+
+      {hl7 && (
+        <div className="modal-layer" role="presentation" onMouseDown={() => setHl7(null)}>
+          <section
+            className="add-modal doc-viewer"
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div className="modal-title-icon">
+                <Icon name="document" size={20} />
+              </div>
+              <div>
+                <span>IHE PIX · HL7 v2</span>
+                <h2>Message d’identité (ADT^A08)</h2>
+              </div>
+              <button onClick={() => setHl7(null)} aria-label="Fermer">
+                ×
+              </button>
+            </div>
+            <pre className="hl7-block">{hl7}</pre>
+            <div className="modal-note">
+              <Icon name="shield" size={15} />
+              Message simulé · rattaché au registre PIX, accès tracé (ATNA).
+            </div>
+          </section>
+        </div>
+      )}
 
       {noteOpen && (
         <NoteModal
