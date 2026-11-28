@@ -1,4 +1,5 @@
 """Imaging / PACS studies (XDS-I.b-style). Image exams only."""
+import base64
 from typing import List
 
 import pydicom
@@ -8,7 +9,7 @@ from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
-from ..dicom_gen import ensure_dicom, ensure_thumbnail
+from ..dicom_gen import ensure_dicom, ensure_thumbnail, save_uploaded_dicom
 from ..models import Exam, PatientIdentifier, PatientMaster, User
 from ..schemas import StudyCreate, StudyMetaOut, StudyOut
 from ..security import get_current_user
@@ -139,15 +140,30 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     pid = _pacs_id(session, pm.id)  # stable PACS identity, shared by the patient's studies
     seq = len(session.exec(select(Exam).where(Exam.modality == "image")).all()) + 915
     reference = f"PACS-{seq}"
+
+    # If a real DICOM file was imported, store it so it is shown as-is;
+    # otherwise a synthetic image is generated on first access.
+    imported = False
+    if body.dicomBase64:
+        try:
+            raw = base64.b64decode(body.dicomBase64, validate=False)
+            save_uploaded_dicom(reference, raw, patient_id=pid,
+                                patient_name=pm.name, issuer_oid=DOMAIN_OID["PACS"])
+            imported = True
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     exam = Exam(
         master_id=pm.id, type=body.modality, date="—", reference=reference,
-        status="Disponible", result=body.description or "Étude DICOM",
+        status="Disponible",
+        result=body.description or ("DICOM importé" if imported else "Étude DICOM"),
         modality="image", tone="brown",
     )
     session.add(exam)
     session.commit()
-    write_audit(session, actor=f"PACS · RAD-54",
-                action=f"Ajout étude DICOM ({reference})", result="Synchronisé")
+    write_audit(session, actor="PACS · RAD-54",
+                action=f"{'Import' if imported else 'Ajout'} étude DICOM ({reference})",
+                result="Synchronisé")
     return StudyOut(reference=reference, type=body.modality,
                     result=exam.result, status="Disponible",
                     patientName=pm.name, cardioId=body.cardioId.strip(), patientId=pid)

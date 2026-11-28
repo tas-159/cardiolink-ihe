@@ -1865,6 +1865,19 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result || "");
+      const comma = res.indexOf(","); // strip the "data:...;base64," prefix
+      resolve(comma >= 0 ? res.slice(comma + 1) : res);
+    };
+    reader.onerror = () => reject(new Error("Lecture du fichier échouée."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function AddModal({
   type,
   onClose,
@@ -1935,10 +1948,19 @@ function AddModal({
           indication: get("indication"),
         });
       } else if (type === "image") {
+        const file = fd.get("file");
+        let dicomBase64 = "";
+        let fileName = "";
+        if (file instanceof File && file.size > 0) {
+          dicomBase64 = await fileToBase64(file);
+          fileName = file.name;
+        }
         await store.createStudy({
           cardioId: get("cardioId"),
           modality: get("modality"),
           description: "",
+          dicomBase64,
+          fileName,
         });
       } else {
         const docType = get("doc_type");
@@ -2098,8 +2120,9 @@ function AddModal({
                   {type === "image" ? "Formats .dcm ou archive .zip" : "Formats PDF, CDA ou image"}
                 </span>
                 <input
+                  name="file"
                   type="file"
-                  accept={type === "image" ? ".dcm,.zip" : ".pdf,.xml,.jpg,.png"}
+                  accept={type === "image" ? ".dcm" : ".pdf,.xml,.jpg,.png"}
                 />
               </label>
             </>

@@ -157,6 +157,8 @@ class StudyCreate(BaseModel):
     cardioId: str
     modality: str = "Échocardiographie"
     description: str = ""
+    dicomBase64: str = ""   # when set, the real imported DICOM is stored & shown
+    fileName: str = ""
 
 
 class DocumentCreate(BaseModel):

@@ -8,6 +8,7 @@ walls and valve leaflets, depth attenuation and fine Rayleigh speckle.
 It is illustrative only — not real patient data.
 """
 import datetime
+import io
 import struct
 import zlib
 
@@ -25,6 +26,8 @@ H = W = 576
 # user's local store are detected as stale and regenerated on next access.
 GEN_VERSION = "3"
 GEN_TAG = f"cardiolink-gen-{GEN_VERSION}"
+# Marker for a real DICOM a user imported — never overwritten by the generator.
+UPLOAD_TAG = "cardiolink-upload"
 
 
 def _gauss_blur(a: np.ndarray, sigma: float) -> np.ndarray:
@@ -136,11 +139,14 @@ def ensure_dicom(reference: str, patient_name: str, description: str = "",
     if path.exists():
         try:
             head = pydicom.dcmread(str(path), stop_before_pixels=True)
-            if getattr(head, "SoftwareVersions", "") == GEN_TAG:
+            tag = getattr(head, "SoftwareVersions", "")
+            # Keep the current synthetic image, and NEVER overwrite a real/
+            # imported file (upload marker, or any non-synthetic DICOM).
+            if tag == GEN_TAG or not tag.startswith("cardiolink-gen-"):
                 return str(path)
         except Exception:
             pass
-        # stale (older generator) or unreadable — regenerate and drop its preview
+        # stale synthetic (older generator) or unreadable — regenerate preview too
         try:
             (STORE / f"{reference}.png").unlink()
         except OSError:
@@ -193,6 +199,36 @@ def ensure_dicom(reference: str, patient_name: str, description: str = "",
     return str(path)
 
 
+def save_uploaded_dicom(reference: str, data: bytes, patient_id: str,
+                        patient_name: str, issuer_oid: str = "") -> str:
+    """Store a DICOM file a user imported, and show it as this study's image.
+
+    Raises ValueError if `data` is not a readable DICOM. The patient-level
+    identity is rewritten to this app's PACS identifier so imported studies of
+    the same patient still group together; the pixel data is kept untouched.
+    """
+    STORE.mkdir(parents=True, exist_ok=True)
+    try:
+        ds = pydicom.dcmread(io.BytesIO(data))
+    except Exception as exc:  # not a DICOM / unreadable
+        raise ValueError("Fichier DICOM invalide ou illisible") from exc
+
+    ds.PatientID = patient_id or reference
+    if issuer_oid:
+        ds.IssuerOfPatientID = issuer_oid
+    if patient_name:
+        ds.PatientName = patient_name
+    ds.SoftwareVersions = UPLOAD_TAG  # protects it from the generator
+
+    path = STORE / f"{reference}.dcm"
+    ds.save_as(str(path))
+    try:
+        (STORE / f"{reference}.png").unlink()  # force the preview to rebuild
+    except OSError:
+        pass
+    return str(path)
+
+
 def _write_png_gray(path: str, arr: np.ndarray) -> None:
     """Write an 8-bit grayscale PNG with the stdlib only (no Pillow)."""
     h, w = arr.shape
@@ -223,13 +259,32 @@ def ensure_thumbnail(reference: str, patient_name: str, description: str = "",
 
     ds = pydicom.dcmread(dcm)
     px = ds.pixel_array.astype(np.float64)
-    wc, ww = float(ds.WindowCenter), float(ds.WindowWidth)
-    lo, hi = wc - ww / 2, wc + ww / 2
+
+    # Real DICOMs vary: take the first frame of a cine, and collapse colour.
+    if px.ndim == 3 and px.shape[-1] in (3, 4):      # RGB / RGBA ultrasound
+        px = px[..., :3].mean(axis=-1)
+    while px.ndim > 2:                                # multi-frame -> first frame
+        px = px[0]
+
+    def _scalar(v, default):
+        if v is None:
+            return default
+        try:
+            return float(v[0] if isinstance(v, pydicom.multival.MultiValue) else v)
+        except (TypeError, ValueError):
+            return default
+
+    wc = _scalar(ds.get("WindowCenter"), None)
+    ww = _scalar(ds.get("WindowWidth"), None)
+    if wc is None or ww is None or ww <= 0:
+        lo, hi = float(px.min()), float(px.max())     # fall back to full range
+    else:
+        lo, hi = wc - ww / 2, wc + ww / 2
     disp = np.clip((px - lo) / max(hi - lo, 1.0), 0.0, 1.0)
 
-    # 2x2 block-mean downsample (576 -> 288)
-    h, w = disp.shape
-    f = 2
-    disp = disp[: h // f * f, : w // f * f].reshape(h // f, f, w // f, f).mean(axis=(1, 3))
+    # Downsample to ~320 px on the long side (nearest-neighbour, any dimensions).
+    long_side = max(disp.shape)
+    step = max(1, long_side // 320)
+    disp = disp[::step, ::step]
     _write_png_gray(str(png), (disp * 255).astype(np.uint8))
     return str(png)
