@@ -11,12 +11,21 @@ importers:
       cornerstone-core:
         specifier: 2.6.1
         version: 2.6.1
+      cornerstone-math:
+        specifier: ^0.1.10
+        version: 0.1.10
+      cornerstone-tools:
+        specifier: ^6.0.10
+        version: 6.0.10(cornerstone-core@2.6.1)
       cornerstone-wado-image-loader:
         specifier: 4.13.2
         version: 4.13.2(@babel/core@7.29.13(supports-color@7.2.0))(cornerstone-core@2.6.1)(eslint@9.39.5(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)
       dicom-parser:
         specifier: 1.8.21
         version: 1.8.21
+      hammerjs:
+        specifier: ^2.0.8
+        version: 2.0.10
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -115,6 +124,9 @@ packages:
     resolution: {integrity: sha512-RpKWyisHoP81twtSCgmE02iU0RnPcq1DN5bBEbpUePrjA9Q3wXhufnCJrrayPpoZieqFh3zyZQqwtSK0gGccRA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  '@babel/runtime@7.1.2':
+    resolution: {integrity: sha512-Y3SCjmhSupzFB6wcv1KmmFucH6gDVnI30WjOcicV10ju0cZjak3Jcs67YLIXBrmZYw1xCrVeJPbycFwrqNyxpg==}
 
   '@babel/template@7.29.7':
     resolution: {integrity: sha512-puq+Gf35oI24FeN11LkoUQFqv9uwNeWpxXZi/Ji3rRIoKAzKnxRaZ+Gkj0vKS9ZCiTESfng1N9LyOyXvo+m+Gg==}
@@ -657,6 +669,15 @@ packages:
   cornerstone-core@2.6.1:
     resolution: {integrity: sha512-LAXjXwNnK2W65ZxpE7phVLjbijkYUrAQIGv5xqKjK8+dmIGlBxqvPHnyGwEqVDyKOWVrpXP6ymUPwrGGRwzgMg==}
 
+  cornerstone-math@0.1.10:
+    resolution: {integrity: sha512-23XSAyP7t70ANvhFyqwvva+zFd1bQ2d5GL7tg9qKE932WmImjA2Y9tiy5n0iTtnf51W/78Png8Lia2o4dCdJaQ==}
+
+  cornerstone-tools@6.0.10:
+    resolution: {integrity: sha512-FbqnuQPmGvwCV6jd4KQ5dQO8zBZH4RfpAPNLoJdcyXh5Cx8YSwB3v5w79z0LLy7GlHjb9lszphW18KMWwI1Z7Q==}
+    engines: {node: '>=8.16.0'}
+    peerDependencies:
+      cornerstone-core: ^2.6.0
+
   cornerstone-wado-image-loader@4.13.2:
     resolution: {integrity: sha512-NGqH44bY1VMY8OYuVykkLriNtZQrmoZU/S6f/1t1xX3rMc+WUMNN+yi4Nu3jp6nckLdH/bVGiigoJXrp0dTrAg==}
     peerDependencies:
@@ -822,6 +843,10 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  hammerjs@2.0.10:
+    resolution: {integrity: sha512-DiE7YOin4llGUKAENkcX6k3fPlTaTocH7kw3bclnavUxQ6z+wRsbf0Dl7EyPi/WluWqVkb6Wn6Lj02gwOJ/TJQ==}
+    engines: {node: '>=0.8.0'}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -1074,6 +1099,9 @@ packages:
     resolution: {integrity: sha512-9nfp2hYpCwOjAN+8TZFGhtWEwgvWHXqESH8qT89AT/lWklpLON22Lc8pEtnpsZz7VmawabSU0gCjnj8aC0euHQ==}
     engines: {node: '>=0.10.0'}
 
+  regenerator-runtime@0.12.1:
+    resolution: {integrity: sha512-odxIc1/vDlo4iZcfXqRYFj0vpXFNoGdKMAUieAlFYO6m/nl5e9KR/beGf41z4a1FI+aQgtjhuaSlDxQ0hmkrHg==}
+
   resolve-from@4.0.0:
     resolution: {integrity: sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==}
     engines: {node: '>=4'}
@@ -1307,6 +1335,10 @@ snapshots:
   '@babel/parser@7.29.15':
     dependencies:
       '@babel/types': 7.29.15
+
+  '@babel/runtime@7.1.2':
+    dependencies:
+      regenerator-runtime: 0.12.1
 
   '@babel/template@7.29.7':
     dependencies:
@@ -1728,6 +1760,14 @@ snapshots:
 
   cornerstone-core@2.6.1: {}
 
+  cornerstone-math@0.1.10: {}
+
+  cornerstone-tools@6.0.10(cornerstone-core@2.6.1):
+    dependencies:
+      '@babel/runtime': 7.1.2
+      cornerstone-core: 2.6.1
+      cornerstone-math: 0.1.10
+
   cornerstone-wado-image-loader@4.13.2(@babel/core@7.29.13(supports-color@7.2.0))(cornerstone-core@2.6.1)(eslint@9.39.5(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0):
     dependencies:
       '@babel/eslint-parser': 7.29.13(@babel/core@7.29.13(supports-color@7.2.0))(eslint@9.39.5(jiti@2.6.1)(supports-color@7.2.0))
@@ -1902,6 +1942,8 @@ snapshots:
   globals@14.0.0: {}
 
   graceful-fs@4.2.11: {}
+
+  hammerjs@2.0.10: {}
 
   has-flag@4.0.0: {}
 
@@ -2116,6 +2158,8 @@ snapshots:
       scheduler: 0.27.0
 
   react@19.2.4: {}
+
+  regenerator-runtime@0.12.1: {}
 
   resolve-from@4.0.0: {}
 

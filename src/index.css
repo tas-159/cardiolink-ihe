@@ -2752,6 +2752,11 @@ footer p {
 .dicom-canvas.tool-pan:active {
   cursor: grabbing;
 }
+.dicom-canvas.tool-length,
+.dicom-canvas.tool-angle,
+.dicom-canvas.tool-arrow {
+  cursor: crosshair;
+}
 
 /* DICOM identity panel — makes the patient-level PatientID visible */
 .dicom-meta {

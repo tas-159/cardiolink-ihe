@@ -1,7 +1,13 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, studyThumbUrl } from "./api";
-import { cornerstone, initCornerstone, studyImageId } from "./dicom";
+import {
+  cornerstone,
+  cornerstoneTools,
+  initCornerstone,
+  registerDicomTools,
+  studyImageId,
+} from "./dicom";
 import { useStore } from "./store";
 import type { DicomMeta, Patient, StudyRow } from "./types";
 
@@ -1314,7 +1320,7 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
   const drag = useRef<{ x: number; y: number } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [meta, setMeta] = useState<DicomMeta | null>(null);
-  const [tool, setTool] = useState<"wl" | "zoom" | "pan">("wl");
+  const [tool, setTool] = useState<"wl" | "zoom" | "pan" | "length" | "angle" | "arrow">("wl");
   const [view, setView] = useState<{ ww: number; wc: number; scale: number; invert: boolean } | null>(
     null,
   );
@@ -1364,6 +1370,19 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
     }
   }
 
+  function clearAnnotations() {
+    const el = ref.current;
+    if (!el) return;
+    try {
+      ["Length", "Angle", "ArrowAnnotate"].forEach((n) => cornerstoneTools.clearToolState(el, n));
+      cornerstone.updateImage(el);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const isAnnotation = tool === "length" || tool === "angle" || tool === "arrow";
+
   useEffect(() => {
     let active = true;
     api
@@ -1387,6 +1406,7 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
     try {
       cornerstone.enable(element);
       enabled = true;
+      registerDicomTools(element);
     } catch {
       setStatus("error");
       return;
@@ -1433,6 +1453,7 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
       }
     };
     const down = (e: MouseEvent) => {
+      if (isAnnotation) return; // let cornerstone-tools handle drawing
       drag.current = { x: e.clientX, y: e.clientY };
       e.preventDefault();
     };
@@ -1473,6 +1494,28 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
       el.removeEventListener("wheel", wheel);
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+    };
+  }, [tool, status]);
+
+  // Annotation tools (cornerstone-tools): active only while selected.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || status !== "ready") return;
+    const name = ({ length: "Length", angle: "Angle", arrow: "ArrowAnnotate" } as const)[
+      tool as "length" | "angle" | "arrow"
+    ];
+    if (!name) return;
+    try {
+      cornerstoneTools.setToolActiveForElement(el, name, { mouseButtonMask: 1 });
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      try {
+        cornerstoneTools.setToolPassiveForElement(el, name);
+      } catch {
+        /* ignore */
+      }
     };
   }, [tool, status]);
 
@@ -1525,6 +1568,32 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
             </button>
             <button onClick={resetView} title="Réinitialiser la vue">
               Ajuster
+            </button>
+          </div>
+          <div className="dicom-tool-group">
+            <button
+              className={tool === "length" ? "active" : ""}
+              onClick={() => setTool("length")}
+              title="Mesurer une distance"
+            >
+              Mesure
+            </button>
+            <button
+              className={tool === "angle" ? "active" : ""}
+              onClick={() => setTool("angle")}
+              title="Mesurer un angle"
+            >
+              Angle
+            </button>
+            <button
+              className={tool === "arrow" ? "active" : ""}
+              onClick={() => setTool("arrow")}
+              title="Ajouter une flèche / un repère"
+            >
+              Flèche
+            </button>
+            <button onClick={clearAnnotations} title="Effacer les annotations">
+              Effacer
             </button>
           </div>
           {view && (
@@ -2074,6 +2143,7 @@ function AddModal({
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
     const get = (k: string) => String(fd.get(k) ?? "");
+    let successMsg = content.success;
     setBusy(true);
     setError("");
     try {
@@ -2096,20 +2166,30 @@ function AddModal({
           indication: get("indication"),
         });
       } else if (type === "image") {
-        const file = fd.get("file");
-        let dicomBase64 = "";
-        let fileName = "";
-        if (file instanceof File && file.size > 0) {
-          dicomBase64 = await fileToBase64(file);
-          fileName = file.name;
+        const files = fd
+          .getAll("file")
+          .filter((f): f is File => f instanceof File && f.size > 0);
+        if (files.length === 0) {
+          await store.createStudy({
+            cardioId: get("cardioId"),
+            modality: get("modality"),
+            description: "",
+          });
+        } else {
+          for (const file of files) {
+            const dicomBase64 = await fileToBase64(file);
+            await store.createStudy({
+              cardioId: get("cardioId"),
+              modality: get("modality"),
+              description: "",
+              dicomBase64,
+              fileName: file.name,
+            });
+          }
+          if (files.length > 1) {
+            successMsg = `${files.length} images DICOM importées pour ce patient.`;
+          }
         }
-        await store.createStudy({
-          cardioId: get("cardioId"),
-          modality: get("modality"),
-          description: "",
-          dicomBase64,
-          fileName,
-        });
       } else {
         const docType = get("doc_type");
         await store.createDocument({
@@ -2118,7 +2198,7 @@ function AddModal({
           doc_type: docType === "Compte rendu" ? "CDA" : "PDF",
         });
       }
-      onSubmit(content.success);
+      onSubmit(successMsg);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de l’enregistrement.");
     } finally {
@@ -2262,14 +2342,19 @@ function AddModal({
               <label className="file-drop">
                 <Icon name={type === "image" ? "image" : "document"} size={25} />
                 <strong>
-                  {type === "image" ? "Sélectionner un fichier DICOM" : "Sélectionner un document"}
+                  {type === "image"
+                    ? "Sélectionner un ou plusieurs fichiers DICOM"
+                    : "Sélectionner un document"}
                 </strong>
                 <span>
-                  {type === "image" ? "Formats .dcm ou archive .zip" : "Formats PDF, CDA ou image"}
+                  {type === "image"
+                    ? "Format .dcm — plusieurs fichiers possibles (un patient)"
+                    : "Formats PDF, CDA ou image"}
                 </span>
                 <input
                   name="file"
                   type="file"
+                  multiple={type === "image"}
                   accept={type === "image" ? ".dcm" : ".pdf,.xml,.jpg,.png"}
                 />
               </label>
