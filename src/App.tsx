@@ -1311,8 +1311,58 @@ function PacsView({ onAdd }: { onAdd: () => void }) {
 
 function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [meta, setMeta] = useState<DicomMeta | null>(null);
+  const [tool, setTool] = useState<"wl" | "zoom" | "pan">("wl");
+  const [view, setView] = useState<{ ww: number; wc: number; scale: number; invert: boolean } | null>(
+    null,
+  );
+
+  function readView(el: HTMLDivElement) {
+    try {
+      const vp = cornerstone.getViewport(el) as unknown as {
+        voi: { windowWidth: number; windowCenter: number };
+        scale: number;
+        invert: boolean;
+      };
+      if (vp)
+        setView({
+          ww: Math.round(vp.voi.windowWidth),
+          wc: Math.round(vp.voi.windowCenter),
+          scale: vp.scale,
+          invert: !!vp.invert,
+        });
+    } catch {
+      /* viewport not ready */
+    }
+  }
+
+  function toggleInvert() {
+    const el = ref.current;
+    if (!el) return;
+    try {
+      const vp = cornerstone.getViewport(el) as any;
+      if (!vp) return;
+      vp.invert = !vp.invert;
+      cornerstone.setViewport(el, vp);
+      readView(el);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function resetView() {
+    const el = ref.current;
+    if (!el) return;
+    try {
+      cornerstone.reset(el);
+      cornerstone.fitToWindow(el);
+      readView(el);
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -1347,6 +1397,7 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
       .then((image: unknown) => {
         if (cancelled) return;
         cornerstone.displayImage(element, image);
+        readView(element);
         setStatus("ready");
       })
       .catch(() => {
@@ -1364,6 +1415,66 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
       }
     };
   }, [study.reference]);
+
+  // Mouse/wheel manipulation — window-level, zoom, pan (like a real viewer).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || status !== "ready") return;
+
+    const apply = (fn: (vp: any) => void) => {
+      try {
+        const vp = cornerstone.getViewport(el) as any;
+        if (!vp) return;
+        fn(vp);
+        cornerstone.setViewport(el, vp);
+        readView(el);
+      } catch {
+        /* ignore */
+      }
+    };
+    const down = (e: MouseEvent) => {
+      drag.current = { x: e.clientX, y: e.clientY };
+      e.preventDefault();
+    };
+    const move = (e: MouseEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      const dx = e.clientX - d.x;
+      const dy = e.clientY - d.y;
+      drag.current = { x: e.clientX, y: e.clientY };
+      apply((vp) => {
+        if (tool === "wl") {
+          vp.voi.windowWidth = Math.max(1, vp.voi.windowWidth + dx * 80);
+          vp.voi.windowCenter = vp.voi.windowCenter + dy * 80;
+        } else if (tool === "zoom") {
+          vp.scale = Math.max(0.05, vp.scale - dy * 0.01);
+        } else {
+          vp.translation.x += dx / vp.scale;
+          vp.translation.y += dy / vp.scale;
+        }
+      });
+    };
+    const up = () => {
+      drag.current = null;
+    };
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      apply((vp) => {
+        vp.scale = Math.max(0.05, vp.scale * (e.deltaY < 0 ? 1.1 : 0.9));
+      });
+    };
+
+    el.addEventListener("mousedown", down);
+    el.addEventListener("wheel", wheel, { passive: false });
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      el.removeEventListener("mousedown", down);
+      el.removeEventListener("wheel", wheel);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [tool, status]);
 
   return (
     <div className="modal-layer" role="presentation" onMouseDown={onClose}>
@@ -1386,8 +1497,45 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
             ×
           </button>
         </div>
+        <div className="dicom-tools">
+          <div className="dicom-tool-group">
+            <button
+              className={tool === "wl" ? "active" : ""}
+              onClick={() => setTool("wl")}
+              title="Fenêtrage — glisser pour régler contraste (horizontal) et luminosité (vertical)"
+            >
+              Contraste
+            </button>
+            <button
+              className={tool === "zoom" ? "active" : ""}
+              onClick={() => setTool("zoom")}
+              title="Zoom — glisser verticalement, ou molette"
+            >
+              Zoom
+            </button>
+            <button
+              className={tool === "pan" ? "active" : ""}
+              onClick={() => setTool("pan")}
+              title="Déplacer l’image"
+            >
+              Déplacer
+            </button>
+            <button onClick={toggleInvert} title="Inverser les niveaux de gris">
+              Inverser
+            </button>
+            <button onClick={resetView} title="Réinitialiser la vue">
+              Ajuster
+            </button>
+          </div>
+          {view && (
+            <span className="dicom-readout">
+              L/N {view.ww} / {view.wc} · Zoom {Math.round(view.scale * 100)}%
+              {view.invert ? " · inversé" : ""}
+            </span>
+          )}
+        </div>
         <div className="dicom-stage">
-          <div className="dicom-canvas" ref={ref} />
+          <div className={`dicom-canvas tool-${tool}`} ref={ref} />
           {status === "loading" && <div className="dicom-overlay">Chargement de l’étude…</div>}
           {status === "error" && (
             <div className="dicom-overlay error">
