@@ -30,7 +30,24 @@ export type Patient = {
   exams: Exam[];
 };
 
-export type AuditRow = { time: string; actor: string; action: string; result: string };
+export type AuditRow = {
+  time: string; // legacy pre-formatted label from the API
+  at?: string; // ISO 8601 with UTC offset — rendered in local time
+  actor: string;
+  action: string;
+  result: string;
+  patient?: string; // which record the event concerned
+};
+export type PendingLink = {
+  identifier_id: number;
+  domain: string;
+  local_id: string;
+  master: string;
+  name: string;
+  birth: string;
+  declared_identity: string;
+  match_rule: string;
+};
 export type DocRow = {
   id: number;
   title: string;

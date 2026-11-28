@@ -89,6 +89,8 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 | `GET /pix/{domain}/{identifier}` | **rapprochement d'identité** (CARDIO/CARD-025 → HIS-001, LAB-301, PACS-…) | PIX · ITI-9 |
 | `GET /pix/{domain}/{identifier}/hl7` | message d'identité émis par ce domaine | PIX · ITI-8 |
 | `GET /pix/resolve?q=&domain=` | console PIX (identifiant ou nom) ; `domain` facultatif | PIX · ITI-9 |
+| `POST /pix/identifiers` | déclarer un identifiant ; **le registre décide** du rapprochement | PIX · ITI-8 |
+| `GET /pix/pending` · `POST /pix/pending/{id}/decide` | rapprochements en attente, et décision humaine | PIX (politique de l'établissement) |
 | `GET /pix/status` | statut PIX Manager | — |
 
 > Un identifiant est **toujours** interprété avec son domaine : il n'existe

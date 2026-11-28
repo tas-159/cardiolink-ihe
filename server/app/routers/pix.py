@@ -17,8 +17,11 @@ from sqlmodel import Session, func, select
 
 from ..audit import write_audit
 from ..database import get_session
+from .. import matching
+from ..matching import STATUS_PENDING, STATUS_REJECTED, STATUS_VALIDATED
 from ..models import PatientIdentifier, PatientMaster, User
-from ..schemas import DomainOut, HL7Out, IdentifierCreate, PixResolveOut, PixStatusOut
+from ..schemas import (DecisionIn, DomainOut, HL7Out, IdentifierCreate, PendingOut,
+                       PixResolveOut, PixStatusOut)
 from ..security import get_current_user
 
 router = APIRouter(prefix="/pix", tags=["pix (identity)"])
@@ -81,9 +84,19 @@ def _require_domain(domain: str) -> str:
     return code
 
 
+def _validated(stmt):
+    """Restrict a query to cross-references that have been validated.
+
+    A pending link is not yet an identity: it must not be returned, which is
+    what the dossier means by "disponible apres validation" (PIX-005).
+    """
+    return stmt.where(PatientIdentifier.status == STATUS_VALIDATED)
+
+
 def _identifiers(session: Session, master_pk: int):
     rows = session.exec(
-        select(PatientIdentifier).where(PatientIdentifier.master_id == master_pk)
+        _validated(select(PatientIdentifier)
+                   .where(PatientIdentifier.master_id == master_pk))
     ).all()
     order = {code: i for i, (code, _, _) in enumerate(DOMAINS)}
     rows.sort(key=lambda r: order.get(r.domain, 99))
@@ -135,8 +148,8 @@ def pix_resolve(q: str = "", domain: Optional[str] = None,
     scope = _require_domain(domain) if domain else None
 
     # 1) identifier match — every match is examined, never just the first row.
-    stmt = select(PatientIdentifier).where(
-        func.lower(PatientIdentifier.local_id) == query.lower())
+    stmt = _validated(select(PatientIdentifier).where(
+        func.lower(PatientIdentifier.local_id) == query.lower()))
     if scope:
         stmt = stmt.where(PatientIdentifier.domain == scope)
     rows = session.exec(stmt).all()
@@ -159,7 +172,8 @@ def pix_resolve(q: str = "", domain: Optional[str] = None,
                                  candidates=candidates)
         pm = session.get(PatientMaster, rows[0].master_id)
         write_audit(session, actor=current.name,
-                    action=f"Requête PIX {rows[0].domain}/{query}", result="Autorisé")
+                    action=f"Requête PIX {rows[0].domain}/{query}", result="Autorisé",
+                    master_id=pm.id, patient_ref=f"{rows[0].domain}/{query}")
         return _resolved(session, pm, query, rows[0].domain)
 
     # 2) demographic match on the name.
@@ -173,7 +187,8 @@ def pix_resolve(q: str = "", domain: Optional[str] = None,
     if len(name_matches) == 1:
         pm = name_matches[0]
         write_audit(session, actor=current.name,
-                    action=f"Requête PIX {query}", result="Autorisé")
+                    action=f"Requête PIX {query}", result="Autorisé",
+                    master_id=pm.id, patient_ref=pm.master_id)
         return _resolved(session, pm, query)
     if len(name_matches) >= 2:
         write_audit(session, actor=current.name,
@@ -192,12 +207,17 @@ def pix_resolve(q: str = "", domain: Optional[str] = None,
 @router.post("/identifiers", response_model=PixResolveOut, status_code=201)
 def add_identifier(body: IdentifierCreate, session: Session = Depends(get_session),
                    current: User = Depends(get_current_user)):
-    """Register one more local identifier for a patient already known (PIX-005).
+    """Declare one more local identifier for a patient (PIX-005).
 
-    Both the reference identifier and the new one are qualified by their domain.
-    KNOWN GAP (INS-1.4): the cross-reference is created immediately, with no
-    matching policy and no 'pending' state — the dossier (p.4) leaves that
-    policy to the enterprise and it is not written yet.
+    The caller says which patient it BELIEVES the identifier belongs to, and
+    declares the demographics its own system holds. The registry checks that
+    belief against its record and decides (see app/matching.py):
+
+    * everything concords -> the cross-reference is validated immediately
+    * anything diverges, is missing, or is not declared -> it stays PENDING
+      and is invisible to queries until a person decides
+
+    The caller can never set the status itself.
     """
     ref = body.patient_ref.strip()
     ref_domain = _require_domain(body.ref_domain)
@@ -207,16 +227,17 @@ def add_identifier(body: IdentifierCreate, session: Session = Depends(get_sessio
         raise HTTPException(status_code=400, detail="Identifiant local vide")
 
     row = session.exec(
-        select(PatientIdentifier).where(
+        _validated(select(PatientIdentifier).where(
             func.lower(PatientIdentifier.local_id) == ref.lower(),
-            PatientIdentifier.domain == ref_domain)
+            PatientIdentifier.domain == ref_domain))
     ).first()
     if not row:
         raise HTTPException(
             status_code=404,
             detail=f"Patient de référence introuvable dans le domaine {ref_domain}")
 
-    # Uniqueness is scoped to the domain: the same value may exist elsewhere.
+    # Uniqueness is scoped to the domain, and a pending link already occupies
+    # the value, so this check deliberately ignores the status.
     existing = session.exec(
         select(PatientIdentifier).where(
             func.lower(PatientIdentifier.local_id) == local_id.lower(),
@@ -227,14 +248,101 @@ def add_identifier(body: IdentifierCreate, session: Session = Depends(get_sessio
             status_code=409,
             detail=f"Cet identifiant existe déjà dans le domaine {domain}")
 
-    session.add(PatientIdentifier(master_id=row.master_id, domain=domain,
-                                  local_id=local_id))
-    session.commit()
     pm = session.get(PatientMaster, row.master_id)
+    status, rule = matching.decide(
+        pm, family_name=body.family_name, given_name=body.given_name,
+        birth=body.birth, gender=body.gender)
+    declared = matching.declared_label(body.family_name, body.given_name,
+                                       body.birth, body.gender)
+
+    link = PatientIdentifier(
+        master_id=pm.id, domain=domain, local_id=local_id,
+        status=status, match_rule=rule, declared_identity=declared,
+        decided_by="politique de rapprochement automatique"
+                   if status == STATUS_VALIDATED else "",
+        decided_at=matching.utcnow() if status == STATUS_VALIDATED else None,
+    )
+    session.add(link)
+    session.commit()
+
+    if status == STATUS_VALIDATED:
+        write_audit(session, actor=current.name,
+                    action=f"Rapprochement {domain}/{local_id} ↔ {pm.master_id} "
+                           f"— validé ({rule})",
+                    result="Validé", master_id=pm.id,
+                    patient_ref=f"{domain}/{local_id}")
+    else:
+        write_audit(session, actor=current.name,
+                    action=f"Rapprochement {domain}/{local_id} ↔ {pm.master_id} "
+                           f"— en attente ({rule})",
+                    result="En attente", master_id=pm.id,
+                    patient_ref=f"{domain}/{local_id}")
+
+    # The answer shows the patient as the registry now knows them: a pending
+    # identifier is therefore absent from the list, on purpose.
+    out = _resolved(session, pm, local_id, domain)
+    out.pending = status == STATUS_PENDING
+    out.match_rule = rule
+    return out
+
+
+@router.get("/pending", response_model=list[PendingOut])
+def pix_pending(session: Session = Depends(get_session),
+                current: User = Depends(get_current_user)):
+    """Cross-references awaiting a human decision."""
+    rows = session.exec(
+        select(PatientIdentifier)
+        .where(PatientIdentifier.status == STATUS_PENDING)
+        .order_by(PatientIdentifier.id.desc())
+    ).all()
+    out = []
+    for r in rows:
+        pm = session.get(PatientMaster, r.master_id)
+        out.append(PendingOut(
+            identifier_id=r.id, domain=r.domain, local_id=r.local_id,
+            master=pm.master_id, name=pm.name, birth=pm.birth,
+            declared_identity=r.declared_identity, match_rule=r.match_rule,
+        ))
+    return out
+
+
+@router.post("/pending/{identifier_id}/decide", response_model=PendingOut)
+def pix_decide(identifier_id: int, body: DecisionIn,
+               session: Session = Depends(get_session),
+               current: User = Depends(get_current_user)):
+    """Accept or refuse a pending cross-reference.
+
+    The dossier (p.11) asks that an automatic correspondence never be
+    presented as a clinical decision: a human closes the loop here.
+    """
+    decision = (body.decision or "").strip().lower()
+    if decision not in ("accept", "reject"):
+        raise HTTPException(status_code=400,
+                            detail="Décision attendue : « accept » ou « reject »")
+    row = session.get(PatientIdentifier, identifier_id)
+    if not row or row.status != STATUS_PENDING:
+        raise HTTPException(status_code=404,
+                            detail="Aucun rapprochement en attente pour cet identifiant")
+
+    row.status = STATUS_VALIDATED if decision == "accept" else STATUS_REJECTED
+    row.decided_by = current.name
+    row.decided_at = matching.utcnow()
+    session.add(row)
+    session.commit()
+
+    pm = session.get(PatientMaster, row.master_id)
+    verdict = "Validé" if decision == "accept" else "Refusé"
     write_audit(session, actor=current.name,
-                action=f"Rapprochement {domain}/{local_id} ↔ {pm.master_id}",
-                result="Validé")
-    return _resolved(session, pm, local_id, domain)
+                action=f"Décision de rapprochement {row.domain}/{row.local_id} "
+                       f"↔ {pm.master_id}",
+                result=verdict, master_id=pm.id,
+                patient_ref=f"{row.domain}/{row.local_id}")
+    return PendingOut(
+        identifier_id=row.id, domain=row.domain, local_id=row.local_id,
+        master=pm.master_id, name=pm.name, birth=pm.birth,
+        declared_identity=row.declared_identity,
+        match_rule=f"{row.match_rule} — {verdict.lower()} par {current.name}",
+    )
 
 
 @router.get("/{domain}/{identifier}", response_model=PixResolveOut)
@@ -249,17 +357,19 @@ def pix_query(domain: str, identifier: str, session: Session = Depends(get_sessi
     code = _require_domain(domain)
     ident = identifier.strip()
     row = session.exec(
-        select(PatientIdentifier).where(
+        _validated(select(PatientIdentifier).where(
             func.lower(PatientIdentifier.local_id) == ident.lower(),
-            PatientIdentifier.domain == code)
+            PatientIdentifier.domain == code))
     ).first()
     if not row:
         write_audit(session, actor=current.name,
-                    action=f"Requête PIX {code}/{ident}", result="Introuvable")
+                    action=f"Requête PIX {code}/{ident}", result="Introuvable",
+                    patient_ref=f"{code}/{ident}")
         return PixResolveOut(mode="notfound", query=ident, domain=code)
     pm = session.get(PatientMaster, row.master_id)
     write_audit(session, actor=current.name,
-                action=f"Requête PIX {code}/{ident}", result="Autorisé")
+                action=f"Requête PIX {code}/{ident}", result="Autorisé",
+                master_id=pm.id, patient_ref=f"{code}/{ident}")
     return _resolved(session, pm, ident, code)
 
 
@@ -279,9 +389,9 @@ def pix_hl7(domain: str, identifier: str, session: Session = Depends(get_session
     code = _require_domain(domain)
     ident = identifier.strip()
     row = session.exec(
-        select(PatientIdentifier).where(
+        _validated(select(PatientIdentifier).where(
             func.lower(PatientIdentifier.local_id) == ident.lower(),
-            PatientIdentifier.domain == code)
+            PatientIdentifier.domain == code))
     ).first()
     if not row:
         raise HTTPException(
@@ -301,5 +411,6 @@ def pix_hl7(domain: str, identifier: str, session: Session = Depends(get_session
         f"{_birth_code(pm.birth)}|{sex}"
     )
     write_audit(session, actor=current.name,
-                action=f"Message HL7 ITI-8 {code}/{ident}", result="Autorisé")
+                action=f"Message HL7 ITI-8 {code}/{ident}", result="Autorisé",
+                master_id=pm.id, patient_ref=f"{code}/{ident}")
     return HL7Out(identifier=ident, domain=code, hl7=msg)

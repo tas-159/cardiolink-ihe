@@ -8,8 +8,9 @@ import {
   registerDicomTools,
   studyImageId,
 } from "./dicom";
+import { localDateTime, localTime } from "./format";
 import { useStore } from "./store";
-import type { DicomMeta, Patient, StudyRow } from "./types";
+import type { DicomMeta, Patient, PendingLink, StudyRow } from "./types";
 
 const DOMAIN_LABELS: Record<string, string> = {
   HIS: "Administration (HIS)",
@@ -813,7 +814,9 @@ function PatientRecord({
 }) {
   const { refresh } = useStore();
   const [status, setStatus] = useState(patient.status);
-  const [notes, setNotes] = useState<{ id: number; author: string; text: string; time: string }[]>(
+  const [notes, setNotes] = useState<
+    { id: number; author: string; text: string; time: string; at?: string }[]
+  >(
     [],
   );
   const [noteOpen, setNoteOpen] = useState(false);
@@ -1012,7 +1015,7 @@ function PatientRecord({
               </span>
               <div>
                 <strong>{note.author}</strong>
-                <small>{note.time}</small>
+                <small title={localDateTime(note.at)}>{localTime(note.at, note.time)}</small>
                 <p>{note.text}</p>
               </div>
             </div>
@@ -2495,17 +2498,19 @@ function AuditView({ onBack }: { onBack: () => void }) {
             <Icon name="lock" size={14} /> Journal sécurisé
           </div>
         </div>
-        <div className="audit-table">
+        <div className="audit-table journal">
           <div className="audit-row header">
             <span>Horodatage</span>
             <span>Acteur</span>
+            <span>Patient concerné</span>
             <span>Action</span>
             <span>Résultat</span>
           </div>
           {audit.map((row, index) => (
-            <div className="audit-row" key={row.time + row.action + index}>
-              <span>{row.time}</span>
+            <div className="audit-row" key={(row.at ?? row.time) + row.action + index}>
+              <span title={localDateTime(row.at)}>{localTime(row.at, row.time)}</span>
               <strong>{row.actor}</strong>
+              <span className="mono">{row.patient || "—"}</span>
               <span>{row.action}</span>
               <em>
                 <i />
@@ -2687,6 +2692,9 @@ type PixResult = {
     domain?: string;
     local_id?: string;
   }[];
+  // Correctif A: set when the registry could not validate the new link alone.
+  pending?: boolean;
+  match_rule?: string;
 };
 type DomainInfo = { code: string; name: string; oid: string; count: number };
 
@@ -2718,11 +2726,38 @@ function PixView({
   const [error, setError] = useState("");
   const [domains, setDomains] = useState<DomainInfo[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  // Correctif A: cross-references the registry could not validate alone.
+  const [pending, setPending] = useState<PendingLink[]>([]);
+  const [deciding, setDeciding] = useState<number | null>(null);
 
   function loadDomains() {
     api.pixDomains().then(setDomains).catch(() => {});
   }
-  useEffect(loadDomains, []);
+  function loadPending() {
+    api.pixPending().then((rows) => setPending(rows as PendingLink[])).catch(() => {});
+  }
+  useEffect(() => {
+    loadDomains();
+    loadPending();
+  }, []);
+
+  async function decide(link: PendingLink, decision: "accept" | "reject") {
+    setDeciding(link.identifier_id);
+    try {
+      await api.pixDecide(link.identifier_id, decision);
+      loadPending();
+      loadDomains();
+      onAction(
+        decision === "accept"
+          ? `Rapprochement ${link.domain}/${link.local_id} validé.`
+          : `Rapprochement ${link.domain}/${link.local_id} refusé.`,
+      );
+    } catch (err) {
+      onAction(err instanceof Error ? err.message : "Décision impossible.");
+    } finally {
+      setDeciding(null);
+    }
+  }
 
   async function search(event?: FormEvent) {
     event?.preventDefault();
@@ -2834,6 +2869,54 @@ function PixView({
         </div>
         {error && <div className="login-error">{error}</div>}
       </section>
+
+      {pending.length > 0 && (
+        <section className="panel pix-pending">
+          <div className="panel-head">
+            <div>
+              <h2>Rapprochements en attente de validation</h2>
+              <p>
+                Le registre n’a pas pu décider seul. Tant qu’un rapprochement
+                n’est pas validé, l’identifiant n’est pas utilisable.
+              </p>
+            </div>
+            <span className="pending-count">{pending.length}</span>
+          </div>
+          {pending.map((link) => (
+            <div className="pending-row" key={link.identifier_id}>
+              <div className="pending-what">
+                <strong className="mono">
+                  {link.domain}/{link.local_id}
+                </strong>
+                <span>
+                  proposé pour {link.name} · {link.master}
+                </span>
+              </div>
+              <div className="pending-why">
+                <small>Identité déclarée : {link.declared_identity || "aucune"}</small>
+                <small>Dossier au registre : {link.name} · né le {link.birth}</small>
+                <em>{link.match_rule}</em>
+              </div>
+              <div className="pending-actions">
+                <button
+                  className="pending-accept"
+                  disabled={deciding === link.identifier_id}
+                  onClick={() => decide(link, "accept")}
+                >
+                  <Icon name="check" size={14} /> Valider
+                </button>
+                <button
+                  className="pending-reject"
+                  disabled={deciding === link.identifier_id}
+                  onClick={() => decide(link, "reject")}
+                >
+                  Refuser
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {result?.mode === "identifier" && (
         <section className="panel pix-result">
@@ -2950,7 +3033,12 @@ function PixView({
             setResult(updated);
             setHl7(null);
             loadDomains();
-            onAction("Identifiant ajouté et rapproché dans PIX.");
+            loadPending();
+            onAction(
+              updated.pending
+                ? `Rapprochement en attente de validation — ${updated.match_rule}`
+                : "Identifiant ajouté et rapproché dans PIX.",
+            );
           }}
         />
       )}
@@ -2981,6 +3069,11 @@ function AddIdentifierModal({
         ref_domain: "CARDIO", // M3: the select lists cardiology identifiers
         domain: get("domain"),
         local_id: get("local_id"),
+        // Correctif A: declared by the source system, checked by the registry.
+        family_name: get("family_name"),
+        given_name: get("given_name"),
+        birth: get("birth"),
+        gender: get("gender"),
       })) as PixResult;
       onAdded(updated);
     } catch (err) {
@@ -3042,11 +3135,40 @@ function AddIdentifierModal({
               Nouvel identifiant
               <input name="local_id" required placeholder="Ex. PACS-960 (identifiant patient)" />
             </label>
+            <label className="full-field field-sep">
+              Identité déclarée par le système source
+              <small className="field-hint">
+                Le registre la compare au dossier qu’il détient. Si tout
+                concorde, le rapprochement est validé ; sinon il reste en
+                attente d’une décision humaine. Laisser vide ⇒ en attente.
+              </small>
+            </label>
+            <label>
+              Nom de famille
+              <input name="family_name" placeholder="Ex. Ben Ali" />
+            </label>
+            <label>
+              Prénom
+              <input name="given_name" placeholder="Ex. Amine" />
+            </label>
+            <label>
+              Date de naissance
+              <input name="birth" placeholder="Ex. 12 mai 1988" />
+            </label>
+            <label>
+              Sexe
+              <select name="gender" defaultValue="">
+                <option value="">Non déclaré</option>
+                <option value="Homme">Homme</option>
+                <option value="Femme">Femme</option>
+              </select>
+            </label>
           </div>
           {error && <div className="login-error">{error}</div>}
           <div className="modal-note">
             <Icon name="shield" size={15} />
-            L’ajout sera rapproché à l’identité maître et journalisé (ATNA).
+            C’est le registre qui décide du rapprochement, jamais l’appelant.
+            L’opération est journalisée avec le patient concerné.
           </div>
           <div className="modal-actions">
             <button type="button" onClick={onClose}>

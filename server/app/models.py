@@ -6,11 +6,16 @@ exam / document     -> clinical data (Examens, PACS, Documents screens)
 audit_log           -> ATNA trace (Journal d'audit, ITI-20)
 user                -> clinical accounts (login / ATNA actor)
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    """Naive UTC, as SQLite stores it. Serialisation adds the UTC offset."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class User(SQLModel, table=True):
@@ -59,6 +64,17 @@ class PatientIdentifier(SQLModel, table=True):
     domain: str = Field(index=True)  # HIS, CARDIO, ECG, LABO, PACS
     local_id: str = Field(index=True)
 
+    # The cross-reference decision (correctif A). IHE leaves the matching
+    # POLICY to the enterprise (dossier PIX, p.4): the registry decides, the
+    # caller never does. Only a "validated" link is usable — a "pending" one
+    # is invisible to queries until someone decides, which is what the dossier
+    # means by "disponible apres validation" (test PIX-005).
+    status: str = Field(default="validated", index=True)  # validated|pending|rejected
+    match_rule: str = ""        # why the registry decided that
+    declared_identity: str = ""  # the identity the source system declared
+    decided_by: str = ""        # "politique automatique" or a user's name
+    decided_at: Optional[datetime] = None
+
 
 class Exam(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -84,12 +100,25 @@ class Document(SQLModel, table=True):
 
 
 class AuditLog(SQLModel, table=True):
+    """One audited event (ATNA ITI-20 style).
+
+    `created_at` is stored in UTC and serialised with an explicit UTC offset,
+    so the interface can render it in the reader's own time zone (correctif
+    M8). `time_label` is a legacy pre-rendered label, no longer written.
+
+    `master_id` and `patient_ref` say WHICH patient the event concerned
+    (correctif B), as the data model of the dossier requires — an access
+    journal that does not name the record consulted serves no purpose.
+    """
     id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
-    time_label: str = ""
+    created_at: datetime = Field(default_factory=_utcnow, index=True)
+    time_label: str = ""  # legacy, kept so older rows still display
     actor: str
     action: str
     result: str = "Autorisé"
+    master_id: Optional[int] = Field(default=None, foreign_key="patientmaster.id",
+                                     index=True)
+    patient_ref: str = ""  # qualified identifier, e.g. "CARDIO/CARD-025"
 
 
 class Note(SQLModel, table=True):
@@ -97,7 +126,7 @@ class Note(SQLModel, table=True):
     master_id: int = Field(foreign_key="patientmaster.id", index=True)
     author: str
     text: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     time_label: str = ""
 
 

@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from ..audit import write_audit
 from ..database import get_session
 from ..identifiers import allocate
+from .. import matching
 from ..dicom_gen import ensure_dicom, ensure_thumbnail, instance_path, save_uploaded_dicom
 from ..models import Exam, PatientIdentifier, PatientMaster, User
 from ..schemas import StudyCreate, StudyMetaOut, StudyOut
@@ -47,7 +48,11 @@ def _pacs_id(session: Session, master_id: int) -> str:
     # f"PACS-{pm.master_id}", which embedded the master identity in the local
     # value and made the cross-reference registry unnecessary.
     local = allocate(session, "PACS")
-    session.add(PatientIdentifier(master_id=master_id, domain="PACS", local_id=local))
+    session.add(PatientIdentifier(
+        master_id=master_id, domain="PACS", local_id=local,
+        status=matching.STATUS_VALIDATED, match_rule=matching.RULE_SAME_DOMAIN,
+        decided_by="politique de rapprochement automatique",
+        decided_at=matching.utcnow()))
     session.commit()
     return local
 
@@ -190,10 +195,12 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     )
     session.add(exam)
     session.commit()
-    write_audit(session, actor="PACS · RAD-54",
-                action=f"{'Import' if imported else 'Ajout'} étude DICOM ({reference}, "
-                       f"{instances} instance{'s' if instances > 1 else ''})",
-                result="Synchronisé")
+    # The actor is the person; the transaction code belongs to the action.
+    write_audit(session, actor=current.name,
+                action=f"{'Import' if imported else 'Ajout'} étude DICOM "
+                       f"(RAD-54, {reference}, {instances} "
+                       f"instance{'s' if instances > 1 else ''})",
+                result="Synchronisé", master_id=pm.id, patient_ref=f"PACS/{pid}")
     return StudyOut(reference=reference, type=body.modality,
                     result=exam.result, status="Disponible",
                     patientName=pm.name, cardioId=body.cardioId.strip(), patientId=pid,

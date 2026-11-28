@@ -85,6 +85,13 @@ export const api = {
     request(`/pix/${encodeURIComponent(domain)}/${encodeURIComponent(identifier)}/hl7`),
   pixAddIdentifier: (body: unknown) =>
     request("/pix/identifiers", { method: "POST", body: JSON.stringify(body) }),
+  // Cross-references the registry could not validate on its own.
+  pixPending: () => request("/pix/pending"),
+  pixDecide: (identifierId: number, decision: "accept" | "reject") =>
+    request(`/pix/pending/${identifierId}/decide`, {
+      method: "POST",
+      body: JSON.stringify({ decision }),
+    }),
 };
 
 // Fetch a study's PNG preview with auth and return an object URL for <img>.

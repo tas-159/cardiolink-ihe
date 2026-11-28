@@ -56,15 +56,24 @@ def test_pix_003_same_value_in_two_domains_stays_distinct(client):
     """
     shared = "DUP-500"
 
-    # the same local value, issued by two different domains, for two patients
+    # The same local value, issued by two different domains, for two patients.
+    # Each source system declares the demographics it holds, so the registry
+    # can validate both cross-references on its own.
     a = client.post("/pix/identifiers", json={
         "patient_ref": "CARD-025", "ref_domain": "CARDIO",
-        "domain": "LABO", "local_id": shared})
+        "domain": "LABO", "local_id": shared,
+        "family_name": "Ben Ali", "given_name": "Amine",
+        "birth": "12 mai 1988", "gender": "Homme"})
     assert a.status_code == 201, a.text
+    assert a.json()["pending"] is False
+
     b = client.post("/pix/identifiers", json={
         "patient_ref": "CARD-041", "ref_domain": "CARDIO",
-        "domain": "ECG", "local_id": shared})
+        "domain": "ECG", "local_id": shared,
+        "family_name": "Cherif", "given_name": "Sofia",
+        "birth": "3 février 1976", "gender": "Femme"})
     assert b.status_code == 201, b.text
+    assert b.json()["pending"] is False
 
     # qualified by its domain, each one resolves to its own patient
     in_labo = client.get(f"/pix/LABO/{shared}").json()
@@ -96,30 +105,46 @@ def test_pix_004_homonym_is_not_merged_on_name(client):
 
 
 # --------------------------------------------------------------------- 005
-def test_pix_005_new_pacs_identifier_becomes_available(client):
-    """A newly registered identifier is cross-referenced and resolvable.
+def test_pix_005_new_identifier_is_available_after_validation(client):
+    """"La nouvelle correspondance est disponible apres validation."
 
-    KNOWN GAP (INS-1.4): the dossier says "disponible apres validation". There
-    is no validation step yet — no matching policy and no 'pending' state — so
-    this test checks availability only.
+    Full requirement now: the registry decides, and a cross-reference it could
+    not validate stays invisible until a person accepts it.
     """
     new_id = "PACS-TEST-77"
+
+    # 1) declared with no demographics -> the registry cannot validate
     res = client.post("/pix/identifiers", json={
         "patient_ref": "CARD-025", "ref_domain": "CARDIO",
         "domain": "PACS", "local_id": new_id})
     assert res.status_code == 201, res.text
-    assert res.json()["master"] == "MASTER-77"
+    body = res.json()
+    assert body["pending"] is True
+    assert "validation humaine" in body["match_rule"]
 
-    # resolvable from its own domain
+    # 2) pending means NOT available: absent from the patient, unresolvable
+    listed = client.get("/pix/CARDIO/CARD-025").json()["identifiers"]
+    assert new_id not in [i["local_id"] for i in listed]
+    assert client.get(f"/pix/PACS/{new_id}").json()["mode"] == "notfound"
+
+    # 3) it appears in the queue of decisions waiting for a person
+    queue = client.get("/pix/pending").json()
+    entry = next(e for e in queue if e["local_id"] == new_id)
+    assert entry["master"] == "MASTER-77"
+    assert entry["domain"] == "PACS"
+
+    # 4) a person accepts it -> now, and only now, it is available
+    decided = client.post(f"/pix/pending/{entry['identifier_id']}/decide",
+                          json={"decision": "accept"})
+    assert decided.status_code == 200, decided.text
+
     again = client.get(f"/pix/PACS/{new_id}").json()
     assert again["mode"] == "identifier"
     assert again["master"] == "MASTER-77"
-
-    # and listed among the patient's cross-referenced identifiers
     listed = client.get("/pix/CARDIO/CARD-025").json()["identifiers"]
     assert new_id in [i["local_id"] for i in listed]
 
-    # the same value cannot be registered twice inside one domain
+    # 5) the same value cannot be registered twice inside one domain
     dup = client.post("/pix/identifiers", json={
         "patient_ref": "CARD-025", "ref_domain": "CARDIO",
         "domain": "PACS", "local_id": new_id})
@@ -140,20 +165,23 @@ def test_pix_006_unauthenticated_access_is_refused(anon):
 
 # --------------------------------------------------------------------- 007
 def test_pix_007_query_is_written_to_the_audit_trail(client):
-    """A PIX query leaves a trace in the audit journal (ATNA ITI-20 style).
+    """A PIX query leaves a trace that says WHO, WHAT, WHEN and WHICH PATIENT.
 
-    KNOWN GAP (INS-5.8): the entry does not yet carry WHICH patient was
-    consulted — AuditLog has no master_id — so the assertion is on the action.
+    Full requirement now: the entry names the record consulted (correctif B)
+    and carries a timestamp with its UTC offset, so the interface can render
+    it in the reader's own time zone (correctif M8).
     """
     before = len(client.get("/audit").json())
     client.get("/pix/CARDIO/CARD-019")
     rows = client.get("/audit").json()
 
     assert len(rows) > before
-    assert any("CARD-019" in r["action"] for r in rows)
     latest = rows[0]
     assert latest["actor"] == "Dr Léa Martin"
-    assert latest["time"]  # a time is always rendered
+    assert "CARD-019" in latest["action"]
+    assert latest["patient"] == "CARDIO/CARD-019"   # which record
+    assert latest["at"].endswith("+00:00")          # explicit UTC offset
+    assert latest["time"]
 
 
 # --------------------------------------------------------------------- 008

@@ -1,9 +1,10 @@
-"""Regression tests for M2, M4 and M6 — defects found in the code review.
+"""Regression tests for the code-review fixes (M2, M4, M6, M8, A, B).
 
 These are NOT part of the dossier's PIX-001..008 set; they exist so the three
 fixes cannot silently come back.
 """
 import re
+from datetime import datetime, timezone
 
 
 # ------------------------------------------------------- M2: HL7 PID-5 / MSH
@@ -126,3 +127,128 @@ def test_m6_issuer_oid_is_in_the_qualifiers_sequence(client):
     back = client.get(f"/pix/PACS/{meta['patientId']}").json()
     assert back["mode"] == "identifier"
     assert back["master"] == "MASTER-77"
+
+
+# ------------------------------- A: the registry decides the cross-reference
+def test_a_divergent_birth_date_stays_pending(client):
+    """The caller declares an identity; the REGISTRY checks it and decides.
+
+    The dossier (p.4) leaves the matching policy to the enterprise, which is
+    precisely what was missing: the caller used to name the patient and the
+    server attached the identifier without verifying anything.
+    """
+    res = client.post("/pix/identifiers", json={
+        "patient_ref": "CARD-025", "ref_domain": "CARDIO",
+        "domain": "ECG", "local_id": "ECG-TEST-1",
+        "family_name": "Ben Ali", "given_name": "Amine",
+        "birth": "9 septembre 1979",   # wrong birth date
+        "gender": "Homme"})
+    assert res.status_code == 201, res.text
+    body = res.json()
+
+    assert body["pending"] is True
+    assert "date de naissance" in body["match_rule"]
+    # and it is NOT usable while pending
+    assert client.get("/pix/ECG/ECG-TEST-1").json()["mode"] == "notfound"
+
+
+def test_a_accents_and_case_do_not_block_validation(client):
+    """Matching compares content, not accents or capitalisation."""
+    res = client.post("/pix/identifiers", json={
+        "patient_ref": "CARD-058", "ref_domain": "CARDIO",
+        "domain": "LABO", "local_id": "LAB-TEST-2",
+        "family_name": "NOUIRA", "given_name": "Ines",  # no accent, upper case
+        "birth": "19 novembre 1994", "gender": "Femme"})
+    assert res.status_code == 201, res.text
+    assert res.json()["pending"] is False
+    assert client.get("/pix/LABO/LAB-TEST-2").json()["master"] == "MASTER-93"
+
+
+def test_a_seeded_pending_case_is_the_homonym_risk(client):
+    """The demo data set ships one real pending case, and a refusal sticks.
+
+    The laboratory declares an identity that looks like Amine Ben Ali but
+    carries the OTHER Amine Ben Ali's birth date. The registry cannot tell the
+    two homonyms apart, so it refuses to decide alone.
+    """
+    queue = client.get("/pix/pending").json()
+    entry = next(e for e in queue if e["local_id"] == "LAB-700")
+    assert entry["master"] == "MASTER-77"
+    assert "4 mars 1991" in entry["declared_identity"]
+    assert "date de naissance" in entry["match_rule"]
+
+    refused = client.post(f"/pix/pending/{entry['identifier_id']}/decide",
+                          json={"decision": "reject"})
+    assert refused.status_code == 200, refused.text
+
+    # refused stays invisible, and cannot be decided a second time
+    assert client.get("/pix/LABO/LAB-700").json()["mode"] == "notfound"
+    assert "LAB-700" not in [e["local_id"] for e in client.get("/pix/pending").json()]
+    assert client.post(f"/pix/pending/{entry['identifier_id']}/decide",
+                       json={"decision": "accept"}).status_code == 404
+
+
+def test_a_caller_cannot_choose_the_status(client):
+    """An unknown decision word is refused rather than interpreted."""
+    assert client.post("/pix/pending/999999/decide",
+                       json={"decision": "accept"}).status_code == 404
+    queue = client.get("/pix/pending").json()
+    if queue:
+        bad = client.post(f"/pix/pending/{queue[0]['identifier_id']}/decide",
+                          json={"decision": "peut-être"})
+        assert bad.status_code == 400
+
+
+# ----------------------------------- B: the journal names the patient
+def test_b_audit_names_the_record_touched(client):
+    """Every audited event that touches a record says which one."""
+    created = client.post("/patients", json={
+        "first_name": "Audit", "last_name": "Traçable",
+        "birth": "5 mai 1980", "gender": "Femme"}).json()
+
+    rows = client.get("/audit").json()
+    entry = next(r for r in rows if created["cardioId"] in r["action"])
+    assert entry["patient"] == f"CARDIO/{created['cardioId']}"
+
+    # a query names the record as well
+    client.get(f"/pix/CARDIO/{created['cardioId']}")
+    assert client.get("/audit").json()[0]["patient"] == f"CARDIO/{created['cardioId']}"
+
+
+def test_b_transaction_codes_are_not_in_the_actor_field(client):
+    """The actor is a person; a transaction code belongs to the action."""
+    for row in client.get("/audit").json():
+        for code in ("RAD-", "ITI-", "LAB-1", "LAB-3"):
+            assert not row["actor"].startswith(code)
+        assert "·" not in row["actor"] or "Jeu de données" in row["actor"]
+
+
+# ----------------------------------- M8: a timestamp that can be localised
+def test_m8_timestamps_carry_an_explicit_utc_offset(client):
+    """The API sends a full instant, so the interface can show local time.
+
+    Before, it sent a pre-formatted "HH:MM" built from UTC, so a reader in
+    Tunis saw an hour less than the clock on their wall, with no way to fix it
+    client-side.
+    """
+    rows = client.get("/audit").json()
+    assert rows
+    for row in rows[:10]:
+        assert row["at"], "chaque entrée doit porter un instant complet"
+        moment = datetime.fromisoformat(row["at"])
+        assert moment.tzinfo is not None
+        assert moment.utcoffset().total_seconds() == 0
+
+    # the most recent entry is a few seconds old at most
+    newest = datetime.fromisoformat(rows[0]["at"])
+    assert abs((datetime.now(timezone.utc) - newest).total_seconds()) < 120
+
+
+def test_m8_notes_also_carry_an_instant(client):
+    """Clinical notes had the same frozen "Aujourd'hui, HH:MM" label."""
+    patients = client.get("/patients").json()
+    pid = patients[0]["id"]
+    added = client.post(f"/patients/{pid}/notes", json={"text": "Note de test M8"})
+    assert added.status_code == 201, added.text
+    assert added.json()["at"].endswith("+00:00")
+    assert datetime.fromisoformat(client.get(f"/patients/{pid}/notes").json()[0]["at"])

@@ -64,8 +64,11 @@ def analyze_exam(reference: str, session: Session = Depends(get_session),
     session.add(exam)
     session.commit()
     session.refresh(exam)
+    pm = session.get(PatientMaster, exam.master_id)
     write_audit(session, actor=current.name,
-                action=f"Analyse examen {reference}", result="Validé")
+                action=f"Analyse examen {reference}", result="Validé",
+                master_id=exam.master_id,
+                patient_ref=pm.master_id if pm else "")
     return exam_out(exam)
 
 
@@ -87,5 +90,6 @@ def create_exam(body: ExamCreate, session: Session = Depends(get_session),
     session.commit()
     session.refresh(exam)
     write_audit(session, actor=current.name,
-                action=f"Prescription {body.type} ({reference})", result="Validé")
+                action=f"Prescription {body.type} ({reference})", result="Validé",
+                master_id=pm.id, patient_ref=f"CARDIO/{body.cardioId.strip()}")
     return exam_out(exam)

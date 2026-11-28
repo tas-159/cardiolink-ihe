@@ -34,6 +34,30 @@ def ensure_schema() -> None:
                 conn.execute(text(
                     f"ALTER TABLE patientmaster ADD COLUMN {column} VARCHAR DEFAULT ''"))
                 conn.commit()
+        # Correctif A: the cross-reference decision.
+        ident_cols = [r[1] for r in conn.execute(
+            text("PRAGMA table_info(patientidentifier)"))]
+        if ident_cols:
+            for column, ddl in (
+                ("status", "VARCHAR DEFAULT 'validated'"),
+                ("match_rule", "VARCHAR DEFAULT ''"),
+                ("declared_identity", "VARCHAR DEFAULT ''"),
+                ("decided_by", "VARCHAR DEFAULT ''"),
+                ("decided_at", "DATETIME"),
+            ):
+                if column not in ident_cols:
+                    conn.execute(text(
+                        f"ALTER TABLE patientidentifier ADD COLUMN {column} {ddl}"))
+                    conn.commit()
+        # Correctif B: which patient each audited event concerned.
+        audit_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(auditlog)"))]
+        if audit_cols:
+            for column, ddl in (("master_id", "INTEGER"),
+                                ("patient_ref", "VARCHAR DEFAULT ''")):
+                if column not in audit_cols:
+                    conn.execute(text(
+                        f"ALTER TABLE auditlog ADD COLUMN {column} {ddl}"))
+                    conn.commit()
         exam_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(exam)"))]
         if exam_cols and "instances" not in exam_cols:
             conn.execute(text("ALTER TABLE exam ADD COLUMN instances INTEGER DEFAULT 1"))

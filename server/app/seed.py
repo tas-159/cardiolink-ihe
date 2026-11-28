@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from .database import engine
 from .audit import write_audit
 from .identifiers import allocate
+from . import matching
 from .models import Document, Exam, PatientIdentifier, PatientMaster, User
 from .security import hash_password
 
@@ -235,6 +236,29 @@ def ensure_pix_data() -> None:
             youssef.status = "Dossier clôturé (inactif)"
             session.add(youssef)
 
+        # Correctif A — one cross-reference left PENDING, so the validation
+        # screen has something real to show. The laboratory declares an
+        # identity that looks like Amine Ben Ali but carries the OTHER Amine
+        # Ben Ali's birth date: the registry cannot tell which of the two
+        # homonyms it is, so it refuses to decide on its own.
+        amine = session.exec(
+            select(PatientMaster).where(PatientMaster.master_id == "MASTER-77")
+        ).first()
+        pending_exists = session.exec(
+            select(PatientIdentifier).where(
+                PatientIdentifier.domain == "LABO",
+                PatientIdentifier.local_id == "LAB-700")
+        ).first()
+        if amine and not pending_exists:
+            status, rule = matching.decide(
+                amine, family_name="Ben Ali", given_name="Amine",
+                birth="4 mars 1991", gender="Homme")
+            session.add(PatientIdentifier(
+                master_id=amine.id, domain="LABO", local_id="LAB-700",
+                status=status, match_rule=rule,
+                declared_identity=matching.declared_label(
+                    "Ben Ali", "Amine", "4 mars 1991", "Homme")))
+
         # Add a homonym test patient to demonstrate the ambiguous case (PIX-004).
         homonym = session.exec(
             select(PatientMaster).where(PatientMaster.master_id == "MASTER-99")
@@ -253,5 +277,14 @@ def ensure_pix_data() -> None:
             session.refresh(hm)
             session.add(PatientIdentifier(master_id=hm.id, domain="HIS", local_id="HIS-050"))
             session.add(PatientIdentifier(master_id=hm.id, domain="CARDIO", local_id="CARD-090"))
+
+        session.commit()
+
+        # Label the demo data set's own cross-references, so the interface can
+        # say WHY each one is validated (correctif A).
+        for row in session.exec(select(PatientIdentifier)).all():
+            if row.status == matching.STATUS_VALIDATED and not row.match_rule:
+                row.match_rule = matching.RULE_DEMO_DATA
+                session.add(row)
 
         session.commit()

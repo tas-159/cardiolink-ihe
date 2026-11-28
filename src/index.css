@@ -2928,6 +2928,49 @@ footer p {
   background: var(--brown-950); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
 }
 .pix-search > button:disabled { opacity: .6; }
+/* Correctif B: the audit journal gained a "patient concerne" column.
+   .audit-row is shared with other tables, so only the journal is widened. */
+.audit-table.journal .audit-row { grid-template-columns: 0.7fr 1fr 1fr 1.5fr 0.7fr; }
+
+/* Correctif A: cross-references awaiting a human decision. */
+.pix-pending .pending-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 8px; border-radius: 999px;
+  background: var(--blue-deep, #1b3a6b); color: #fff;
+  font-size: 12px; font-weight: 700;
+}
+.pix-pending .pending-row {
+  display: grid; grid-template-columns: 1.1fr 1.6fr auto;
+  gap: 16px; align-items: center;
+  padding: 14px 12px; border-top: 1px solid var(--line, rgba(0,0,0,.12));
+}
+.pix-pending .pending-what { display: flex; flex-direction: column; gap: 3px; }
+.pix-pending .pending-what span { color: var(--muted); font-size: 12px; }
+.pix-pending .pending-why { display: flex; flex-direction: column; gap: 2px; }
+.pix-pending .pending-why small { color: var(--muted); font-size: 11.5px; }
+.pix-pending .pending-why em { font-size: 11.5px; font-style: normal; font-weight: 600; }
+.pix-pending .pending-actions { display: flex; gap: 8px; }
+.pix-pending .pending-actions button {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line, rgba(0,0,0,.12));
+  background: var(--surface, #fff); color: inherit;
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.pix-pending .pending-actions .pending-accept {
+  border-color: transparent; background: var(--blue-deep, #1b3a6b); color: #fff;
+}
+.pix-pending .pending-actions button:disabled { opacity: .6; cursor: default; }
+@media (max-width: 860px) {
+  .pix-pending .pending-row { grid-template-columns: 1fr; }
+}
+
+/* The declared-identity block of the add-identifier modal. */
+.form-grid .field-sep { margin-top: 6px; }
+.form-grid .field-hint {
+  display: block; margin-top: 4px; color: var(--muted);
+  font-size: 11.5px; font-weight: 400; line-height: 1.45;
+}
+
 /* M3: the identification domain of the searched value. */
 .pix-domain-select { flex: 0 1 190px; display: flex; }
 .pix-domain-select select {
