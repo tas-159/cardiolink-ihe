@@ -83,7 +83,7 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 | `GET /patients?query=` | recherche patient | PDQ · ITI-21 |
 | `GET /patients/{id}` · `POST /patients` | dossier patient | PIX · ITI-8 |
 | `GET/POST /exams` | examens / prescription | LTW |
-| `GET/POST /studies` | imagerie DICOM | XDS-I.b · RAD-54 |
+| `GET/POST /studies` | imagerie DICOM | XDS-I.b · RAD-68 (RAD-54 est déprécié) |
 | `POST /documents` | **publier** un document (vrai CDA ou vrai PDF) | XDS.b · ITI-41 |
 | `GET /documents/query?domain=&patient=` | **interroger** le registre : métadonnées seules | XDS.b · ITI-18 |
 | `GET /documents/{uniqueId}/retrieve` | **récupérer** le fichier depuis le dépôt | XDS.b · ITI-43 |

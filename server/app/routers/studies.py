@@ -196,9 +196,12 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     session.add(exam)
     session.commit()
     # The actor is the person; the transaction code belongs to the action.
+    # RAD-68, not RAD-54: "Provide and Register Imaging Document Set" [RAD-54]
+    # is DEPRECATED and superseded by "Provide and Register Imaging Document
+    # Set - MTOM/XOP" [RAD-68] in XDS-I.b (RAD TF-1, section XDS-I.b).
     write_audit(session, actor=current.name,
                 action=f"{'Import' if imported else 'Ajout'} étude DICOM "
-                       f"(RAD-54, {reference}, {instances} "
+                       f"(RAD-68, {reference}, {instances} "
                        f"instance{'s' if instances > 1 else ''})",
                 result="Synchronisé", master_id=pm.id, patient_ref=f"PACS/{pid}")
     return StudyOut(reference=reference, type=body.modality,
