@@ -3040,7 +3040,7 @@ function AddIdentifierModal({
             </label>
             <label className="full-field">
               Nouvel identifiant
-              <input name="local_id" required placeholder="Ex. PACS-960" />
+              <input name="local_id" required placeholder="Ex. PACS-960 (identifiant patient)" />
             </label>
           </div>
           {error && <div className="login-error">{error}</div>}

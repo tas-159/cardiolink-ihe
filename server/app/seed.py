@@ -20,7 +20,8 @@ PATIENTS = [
         "initials": "AB", "name": "Amine Ben Ali", "family": "Ben Ali",
         "given": "Amine", "gender": "Homme",
         "birth": "12 mai 1988", "age": 38, "master": "MASTER-77",
-        "cardioId": "CARD-025", "hisId": "HIS-001", "phone": "+216 22 431 879",
+        "cardioId": "CARD-025", "hisId": "HIS-001", "pacsId": "PACS-914",
+        "phone": "+216 22 431 879",
         "address": "18 rue des Jasmins, Tunis", "blood": "O+",
         "allergies": "Aucune connue", "doctor": "Dr Léa Martin",
         "reason": "Douleur thoracique", "admission": "16 oct. 2026 · 08:41",
@@ -28,7 +29,7 @@ PATIENTS = [
         "exams": [
             ("Électrocardiogramme", "16 oct. 2026 · 09:32", "ECG-778", "À analyser", "Rythme sinusal · 72 bpm", "activity", "blue"),
             ("Bilan sanguin", "16 oct. 2026 · 09:48", "LAB-301", "Validé", "Troponine 0,02 ng/mL", "lab", "cream"),
-            ("Échocardiographie", "16 oct. 2026 · 10:14", "PACS-914", "Disponible", "FEVG 62% · Étude DICOM", "image", "brown"),
+            ("Échocardiographie", "16 oct. 2026 · 10:14", "STU-914", "Disponible", "FEVG 62% · Étude DICOM", "image", "brown"),
         ],
     },
     {
@@ -55,7 +56,7 @@ PATIENTS = [
         "reason": "Contrôle post-infarctus", "admission": "15 oct. 2026 · 14:20",
         "status": "Dossier complet",
         "exams": [
-            ("Échocardiographie", "15 oct. 2026 · 15:10", "PACS-881", "Analysé", "FEVG 48% · Hypokinésie inférieure", "image", "brown"),
+            ("Échocardiographie", "15 oct. 2026 · 15:10", "STU-881", "Analysé", "FEVG 48% · Hypokinésie inférieure", "image", "brown"),
             ("Épreuve d'effort", "15 oct. 2026 · 16:00", "CARD-TEST-28", "Analysé", "Test sous-maximal négatif", "heart", "cream"),
         ],
     },
@@ -69,7 +70,7 @@ PATIENTS = [
         "reason": "Souffle cardiaque", "admission": "14 oct. 2026 · 11:05",
         "status": "Suivi programmé",
         "exams": [
-            ("Échocardiographie Doppler", "14 oct. 2026 · 11:45", "PACS-952", "Disponible", "Insuffisance mitrale légère", "image", "brown"),
+            ("Échocardiographie Doppler", "14 oct. 2026 · 11:45", "STU-952", "Disponible", "Insuffisance mitrale légère", "image", "brown"),
         ],
     },
 ]
@@ -126,10 +127,13 @@ def seed_if_empty() -> None:
                 session.add(PatientIdentifier(master_id=pm.id, domain="LABO", local_id=first_lab[2]))
             if first_img:
                 # PACS identity is PATIENT-level (shared by all the patient's
-                # studies), not a study reference. M4: allocated by the PACS
-                # domain's own sequence, never derived from the master id.
-                session.add(PatientIdentifier(master_id=pm.id, domain="PACS",
-                                              local_id=allocate(session, "PACS")))
+                # studies) and is NOT a study reference — study references use
+                # the STU- prefix. The dossier (p.9) gives PACS-914 for Amine
+                # Ben Ali; the other patients are allocated by the PACS
+                # domain's own sequence, never derived from the master id (M4).
+                session.add(PatientIdentifier(
+                    master_id=pm.id, domain="PACS",
+                    local_id=p.get("pacsId") or allocate(session, "PACS")))
 
             for (etype, date, ref, status_, result, modality, tone) in p["exams"]:
                 session.add(Exam(

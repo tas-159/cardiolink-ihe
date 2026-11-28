@@ -124,5 +124,5 @@ python -m pytest tests -q
 The PACS screen opens studies in a real client-side DICOM viewer (Cornerstone.js).
 The backend generates synthetic, uncompressed `.dcm` files on demand under
 `server/dicom_store/`. To use **real** studies, drop a file named
-`<REFERENCE>.dcm` (e.g. `PACS-914.dcm`) into that folder — the viewer reads
+`<REFERENCE>.dcm` (e.g. `STU-914.dcm`) into that folder — the viewer reads
 whatever is there. The backend needs `pydicom` + `numpy` (in `requirements.txt`).

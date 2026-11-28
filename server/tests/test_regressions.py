@@ -109,12 +109,15 @@ def test_m6_issuer_oid_is_in_the_qualifiers_sequence(client):
 
     An OID in (0010,0021) is wrong, and an SH overflows at 16 characters.
     """
-    res = client.get("/studies/PACS-914/metadata")
+    res = client.get("/studies/STU-914/metadata")
     assert res.status_code == 200, res.text
     meta = res.json()
 
     assert meta["issuer"] == "PACS"
     assert meta["issuerOid"] == "1.2.3.4.5"
+    # the study reference and the patient identifier are different things
+    assert meta["patientId"] == "PACS-914"  # dossier p.9
+    assert meta["reference"] == "STU-914"
     assert len(meta["issuer"]) <= 16
     assert not meta["issuer"][0].isdigit()  # a name, not an OID
 

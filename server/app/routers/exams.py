@@ -17,7 +17,7 @@ TYPE_MAP = {
     "Holter ECG": ("ECG", "activity", "blue"),
     "Bilan sanguin": ("LAB", "lab", "cream"),
     "Ionogramme sanguin": ("LAB", "lab", "cream"),
-    "Échocardiographie": ("PACS", "image", "brown"),
+    "Échocardiographie": ("STU", "image", "brown"),  # study ref, not a patient id
     "Épreuve d'effort": ("CARD-TEST", "heart", "cream"),
 }
 

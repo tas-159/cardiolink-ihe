@@ -158,8 +158,10 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     if not pm:
         raise HTTPException(status_code=404, detail="Patient introuvable")
     pid = _pacs_id(session, pm.id)  # stable PACS identity, shared by the patient's studies
+    # A study reference is NOT a patient identifier: the STU- prefix keeps the
+    # two apart. PACS-xxx now means only "this patient, in the PACS domain".
     seq = len(session.exec(select(Exam).where(Exam.modality == "image")).all()) + 915
-    reference = f"PACS-{seq}"
+    reference = f"STU-{seq}"
 
     # One or several imported DICOMs form ONE study with many instances; all
     # instances share the Study/Series UID so they group like a real PACS.
