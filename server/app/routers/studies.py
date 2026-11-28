@@ -1,6 +1,7 @@
 """Imaging / PACS studies (XDS-I.b-style). Image exams only."""
 from typing import List
 
+import pydicom
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
@@ -9,7 +10,7 @@ from ..audit import write_audit
 from ..database import get_session
 from ..dicom_gen import ensure_dicom, ensure_thumbnail
 from ..models import Exam, PatientIdentifier, PatientMaster, User
-from ..schemas import StudyCreate, StudyOut
+from ..schemas import StudyCreate, StudyMetaOut, StudyOut
 from ..security import get_current_user
 from .pix import DOMAIN_OID
 
@@ -54,10 +55,11 @@ def list_studies(session: Session = Depends(get_session),
         imgs = session.exec(
             select(Exam).where(Exam.master_id == pm.id, Exam.modality == "image")
         ).all()
+        pid = _pacs_id(session, pm.id) if imgs else ""
         for e in imgs:
             studies.append(StudyOut(
                 reference=e.reference, type=e.type, result=e.result, status=e.status,
-                patientName=pm.name, cardioId=_cardio_of(session, pm.id),
+                patientName=pm.name, cardioId=_cardio_of(session, pm.id), patientId=pid,
             ))
     return studies
 
@@ -94,6 +96,37 @@ def study_thumbnail(reference: str, session: Session = Depends(get_session),
     return FileResponse(path, media_type="image/png")
 
 
+@router.get("/{reference}/metadata", response_model=StudyMetaOut, tags=["studies (PACS)"])
+def study_metadata(reference: str, session: Session = Depends(get_session),
+                   current: User = Depends(get_current_user)):
+    """Return the real DICOM identity tags of a study (read from the .dcm).
+
+    Lets the viewer show that every study of a patient shares the same
+    patient-level PatientID (0010,0020) while each study keeps its own
+    StudyInstanceUID (0020,000D).
+    """
+    exam = session.exec(
+        select(Exam).where(Exam.reference == reference, Exam.modality == "image")
+    ).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Étude introuvable")
+    pm = session.get(PatientMaster, exam.master_id)
+    path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type,
+                        patient_id=_pacs_id(session, exam.master_id),
+                        issuer_oid=DOMAIN_OID["PACS"])
+    ds = pydicom.dcmread(path, stop_before_pixels=True)
+    return StudyMetaOut(
+        reference=reference,
+        patientName=str(ds.PatientName),
+        patientId=str(ds.PatientID),
+        issuer=str(getattr(ds, "IssuerOfPatientID", "")),
+        modality=str(getattr(ds, "Modality", "")),
+        studyUid=str(ds.StudyInstanceUID),
+        seriesUid=str(ds.SeriesInstanceUID),
+        sopUid=str(ds.SOPInstanceUID),
+    )
+
+
 @router.post("", response_model=StudyOut, status_code=201)
 def create_study(body: StudyCreate, session: Session = Depends(get_session),
                  current: User = Depends(get_current_user)):
@@ -103,7 +136,7 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     pm = session.get(PatientMaster, row.master_id) if row else None
     if not pm:
         raise HTTPException(status_code=404, detail="Patient introuvable")
-    _pacs_id(session, pm.id)  # ensure the patient has a stable PACS identity
+    pid = _pacs_id(session, pm.id)  # stable PACS identity, shared by the patient's studies
     seq = len(session.exec(select(Exam).where(Exam.modality == "image")).all()) + 915
     reference = f"PACS-{seq}"
     exam = Exam(
@@ -117,4 +150,4 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
                 action=f"Ajout étude DICOM ({reference})", result="Synchronisé")
     return StudyOut(reference=reference, type=body.modality,
                     result=exam.result, status="Disponible",
-                    patientName=pm.name, cardioId=body.cardioId.strip())
+                    patientName=pm.name, cardioId=body.cardioId.strip(), patientId=pid)

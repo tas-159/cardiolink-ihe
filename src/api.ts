@@ -62,6 +62,8 @@ export const api = {
     request(`/patients/${pid}/notes`, { method: "POST", body: JSON.stringify({ text }) }),
   documentContent: (docId: number) => request(`/documents/${docId}/content`),
   studies: () => request("/studies"),
+  studyMeta: (reference: string) =>
+    request(`/studies/${encodeURIComponent(reference)}/metadata`),
   createStudy: (body: unknown) =>
     request("/studies", { method: "POST", body: JSON.stringify(body) }),
   documents: () => request("/documents"),

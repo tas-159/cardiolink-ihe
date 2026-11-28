@@ -3,7 +3,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "reac
 import { api, studyThumbUrl } from "./api";
 import { cornerstone, initCornerstone, studyImageId } from "./dicom";
 import { useStore } from "./store";
-import type { Patient, StudyRow } from "./types";
+import type { DicomMeta, Patient, StudyRow } from "./types";
 
 const DOMAIN_LABELS: Record<string, string> = {
   HIS: "Administration (HIS)",
@@ -1291,6 +1291,11 @@ function PacsView({ onAdd }: { onAdd: () => void }) {
               <p>
                 {study.patientName} · {study.cardioId}
               </p>
+              {study.patientId && (
+                <span className="pacs-pid" title="PatientID DICOM (0010,0020) — partagé par toutes les études du patient">
+                  <Icon name="link" size={12} /> ID patient · {study.patientId}
+                </span>
+              )}
               <strong>{study.result}</strong>
             </div>
             <button onClick={() => setViewer(study)}>
@@ -1307,6 +1312,20 @@ function PacsView({ onAdd }: { onAdd: () => void }) {
 function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [meta, setMeta] = useState<DicomMeta | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .studyMeta(study.reference)
+      .then((m) => {
+        if (active) setMeta(m as DicomMeta);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [study.reference]);
 
   useEffect(() => {
     const element = ref.current;
@@ -1377,6 +1396,38 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
             </div>
           )}
         </div>
+        {meta && (
+          <dl className="dicom-meta">
+            <div className="dicom-meta-row pid">
+              <dt>
+                <Icon name="link" size={13} /> Patient ID · 0010,0020
+              </dt>
+              <dd>
+                <span className="mono">{meta.patientId}</span>
+                <em>partagé par toutes les études du patient · domaine PACS {meta.issuer}</em>
+              </dd>
+            </div>
+            <div className="dicom-meta-row">
+              <dt>Study UID · 0020,000D</dt>
+              <dd>
+                <span className="mono">{meta.studyUid}</span>
+                <em>propre à cette étude</em>
+              </dd>
+            </div>
+            <div className="dicom-meta-row">
+              <dt>Series UID · 0020,000E</dt>
+              <dd>
+                <span className="mono">{meta.seriesUid}</span>
+              </dd>
+            </div>
+            <div className="dicom-meta-row">
+              <dt>Modalité · 0008,0060</dt>
+              <dd>
+                <span className="mono">{meta.modality}</span>
+              </dd>
+            </div>
+          </dl>
+        )}
         <div className="dicom-foot">
           <Icon name="shield" size={14} /> Rendu client-side (Cornerstone.js) ·{" "}
           {study.result}

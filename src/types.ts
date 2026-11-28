@@ -46,6 +46,18 @@ export type StudyRow = {
   status: string;
   patientName: string;
   cardioId: string;
+  patientId: string;
+};
+
+export type DicomMeta = {
+  reference: string;
+  patientName: string;
+  patientId: string;
+  issuer: string;
+  modality: string;
+  studyUid: string;
+  seriesUid: string;
+  sopUid: string;
 };
 export type CurrentUser = { identifier: string; name: string; role: string; initials: string };
 export type PixStatus = { status: string; latency_ms: number; patients: number };

@@ -44,6 +44,18 @@ class StudyOut(BaseModel):
     status: str
     patientName: str
     cardioId: str
+    patientId: str = ""
+
+
+class StudyMetaOut(BaseModel):
+    reference: str
+    patientName: str
+    patientId: str
+    issuer: str
+    modality: str
+    studyUid: str
+    seriesUid: str
+    sopUid: str
 
 
 class DocumentOut(BaseModel):
