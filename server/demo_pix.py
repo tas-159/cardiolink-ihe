@@ -1,4 +1,4 @@
-"""Scenario de demonstration CardioLink — verifie M1 a M7 bout en bout.
+r"""Scenario de demonstration CardioLink — verifie M1 a M7 bout en bout.
 
 Neuf etapes qui exercent les correctifs de conformite contre l'API qui tourne,
 et impriment ce qu'elles obtiennent. Pensee pour une demonstration de
