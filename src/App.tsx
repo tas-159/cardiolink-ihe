@@ -1292,7 +1292,10 @@ function PacsView({ onAdd }: { onAdd: () => void }) {
           <article className="panel pacs-card" key={study.reference}>
             <ScanThumb reference={study.reference} />
             <div>
-              <small>{study.reference}</small>
+              <small>
+                {study.reference}
+                {study.instances > 1 && <span className="pacs-count">{study.instances} images</span>}
+              </small>
               <h3>{study.type}</h3>
               <p>
                 {study.patientName} · {study.cardioId}
@@ -1321,6 +1324,7 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [meta, setMeta] = useState<DicomMeta | null>(null);
   const [tool, setTool] = useState<"wl" | "zoom" | "pan" | "length" | "angle" | "arrow">("wl");
+  const [index, setIndex] = useState(0);
   const [view, setView] = useState<{ ww: number; wc: number; scale: number; invert: boolean } | null>(
     null,
   );
@@ -1396,45 +1400,55 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
     };
   }, [study.reference]);
 
+  // Enable the element once per study; reset to the first instance.
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    let enabled = false;
-    let cancelled = false;
-
     initCornerstone();
+    setIndex(0);
     try {
       cornerstone.enable(element);
-      enabled = true;
       registerDicomTools(element);
     } catch {
       setStatus("error");
       return;
     }
+    return () => {
+      try {
+        cornerstone.disable(element);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [study.reference]);
 
+  // Load the current instance (keeps window/level & zoom across instances).
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    let cancelled = false;
+    setStatus("loading");
     cornerstone
-      .loadImage(studyImageId(study.reference))
+      .loadImage(studyImageId(study.reference, index))
       .then((image: unknown) => {
         if (cancelled) return;
-        cornerstone.displayImage(element, image);
+        let vp: unknown;
+        try {
+          vp = cornerstone.getViewport(element);
+        } catch {
+          vp = undefined;
+        }
+        cornerstone.displayImage(element, image, vp || undefined);
         readView(element);
         setStatus("ready");
       })
       .catch(() => {
         if (!cancelled) setStatus("error");
       });
-
     return () => {
       cancelled = true;
-      if (enabled) {
-        try {
-          cornerstone.disable(element);
-        } catch {
-          /* ignore */
-        }
-      }
     };
-  }, [study.reference]);
+  }, [study.reference, index]);
 
   // Mouse/wheel manipulation — window-level, zoom, pan (like a real viewer).
   useEffect(() => {
@@ -1603,6 +1617,30 @@ function DicomViewer({ study, onClose }: { study: StudyRow; onClose: () => void 
             </span>
           )}
         </div>
+        {study.instances > 1 && (
+          <div className="dicom-stack">
+            <button onClick={() => setIndex((i) => Math.max(0, i - 1))} disabled={index === 0}>
+              ‹
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={study.instances - 1}
+              value={index}
+              onChange={(e) => setIndex(Number(e.target.value))}
+              aria-label="Instance"
+            />
+            <button
+              onClick={() => setIndex((i) => Math.min(study.instances - 1, i + 1))}
+              disabled={index === study.instances - 1}
+            >
+              ›
+            </button>
+            <span>
+              Image {index + 1} / {study.instances}
+            </span>
+          </div>
+        )}
         <div className="dicom-stage">
           <div className={`dicom-canvas tool-${tool}`} ref={ref} />
           {status === "loading" && <div className="dicom-overlay">Chargement de l’étude…</div>}
@@ -2176,18 +2214,16 @@ function AddModal({
             description: "",
           });
         } else {
-          for (const file of files) {
-            const dicomBase64 = await fileToBase64(file);
-            await store.createStudy({
-              cardioId: get("cardioId"),
-              modality: get("modality"),
-              description: "",
-              dicomBase64,
-              fileName: file.name,
-            });
-          }
+          // All files imported together = ONE study with several instances.
+          const dicoms = await Promise.all(files.map((f) => fileToBase64(f)));
+          await store.createStudy({
+            cardioId: get("cardioId"),
+            modality: get("modality"),
+            description: "",
+            dicoms,
+          });
           if (files.length > 1) {
-            successMsg = `${files.length} images DICOM importées pour ce patient.`;
+            successMsg = `Étude de ${files.length} images importée pour ce patient.`;
           }
         }
       } else {

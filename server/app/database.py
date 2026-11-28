@@ -27,6 +27,10 @@ def ensure_schema() -> None:
         if cols and "active" not in cols:
             conn.execute(text("ALTER TABLE patientmaster ADD COLUMN active BOOLEAN DEFAULT 1"))
             conn.commit()
+        exam_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(exam)"))]
+        if exam_cols and "instances" not in exam_cols:
+            conn.execute(text("ALTER TABLE exam ADD COLUMN instances INTEGER DEFAULT 1"))
+            conn.commit()
 
 
 def get_session():

@@ -199,13 +199,21 @@ def ensure_dicom(reference: str, patient_name: str, description: str = "",
     return str(path)
 
 
-def save_uploaded_dicom(reference: str, data: bytes, patient_id: str,
-                        patient_name: str, issuer_oid: str = "") -> str:
-    """Store a DICOM file a user imported, and show it as this study's image.
+def instance_path(reference: str, instance: int = 0):
+    """File path of one instance of a study (instance 0 = the study's base file)."""
+    name = f"{reference}.dcm" if instance == 0 else f"{reference}__{instance}.dcm"
+    return STORE / name
 
-    Raises ValueError if `data` is not a readable DICOM. The patient-level
-    identity is rewritten to this app's PACS identifier so imported studies of
-    the same patient still group together; the pixel data is kept untouched.
+
+def save_uploaded_dicom(reference: str, data: bytes, patient_id: str,
+                        patient_name: str, issuer_oid: str = "", instance: int = 0,
+                        study_uid: str = "", series_uid: str = "") -> str:
+    """Store one imported DICOM image as instance `instance` of a study.
+
+    Raises ValueError if `data` is not a readable DICOM. Patient identity is
+    rewritten to this app's PACS identifier, and all instances of one import
+    share the same Study/Series UID so they group as a single study (the DICOM
+    Patient→Study→Series→Instance hierarchy). Pixel data is kept untouched.
     """
     STORE.mkdir(parents=True, exist_ok=True)
     try:
@@ -218,14 +226,20 @@ def save_uploaded_dicom(reference: str, data: bytes, patient_id: str,
         ds.IssuerOfPatientID = issuer_oid
     if patient_name:
         ds.PatientName = patient_name
+    if study_uid:
+        ds.StudyInstanceUID = study_uid
+    if series_uid:
+        ds.SeriesInstanceUID = series_uid
+    ds.InstanceNumber = instance + 1
     ds.SoftwareVersions = UPLOAD_TAG  # protects it from the generator
 
-    path = STORE / f"{reference}.dcm"
+    path = instance_path(reference, instance)
     ds.save_as(str(path))
-    try:
-        (STORE / f"{reference}.png").unlink()  # force the preview to rebuild
-    except OSError:
-        pass
+    if instance == 0:
+        try:
+            (STORE / f"{reference}.png").unlink()  # force the preview to rebuild
+        except OSError:
+            pass
     return str(path)
 
 

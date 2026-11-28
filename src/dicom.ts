@@ -34,8 +34,9 @@ export function initCornerstone() {
   configured = true;
 }
 
-export function studyImageId(reference: string): string {
-  return `wadouri:${API_BASE}/studies/${encodeURIComponent(reference)}/file`;
+export function studyImageId(reference: string, instance = 0): string {
+  const base = `${API_BASE}/studies/${encodeURIComponent(reference)}/file`;
+  return `wadouri:${instance ? `${base}?instance=${instance}` : base}`;
 }
 
 // Add the measurement/annotation tools to a specific enabled element.

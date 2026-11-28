@@ -57,6 +57,7 @@ class Exam(SQLModel, table=True):
     result: str = ""
     modality: str = "activity"  # icon: activity | lab | image | heart
     tone: str = "blue"
+    instances: int = 1  # number of DICOM images in this study (imaging only)
 
 
 class Document(SQLModel, table=True):

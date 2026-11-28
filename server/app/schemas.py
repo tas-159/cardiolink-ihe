@@ -45,6 +45,7 @@ class StudyOut(BaseModel):
     patientName: str
     cardioId: str
     patientId: str = ""
+    instances: int = 1
 
 
 class StudyMetaOut(BaseModel):
@@ -157,7 +158,8 @@ class StudyCreate(BaseModel):
     cardioId: str
     modality: str = "Échocardiographie"
     description: str = ""
-    dicomBase64: str = ""   # when set, the real imported DICOM is stored & shown
+    dicomBase64: str = ""   # single imported DICOM (kept for compatibility)
+    dicoms: List[str] = []  # several imported DICOMs → one study, many instances
     fileName: str = ""
 
 

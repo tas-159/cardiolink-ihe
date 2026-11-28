@@ -3,13 +3,14 @@ import base64
 from typing import List
 
 import pydicom
+from pydicom.uid import generate_uid
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
-from ..dicom_gen import ensure_dicom, ensure_thumbnail, save_uploaded_dicom
+from ..dicom_gen import ensure_dicom, ensure_thumbnail, instance_path, save_uploaded_dicom
 from ..models import Exam, PatientIdentifier, PatientMaster, User
 from ..schemas import StudyCreate, StudyMetaOut, StudyOut
 from ..security import get_current_user
@@ -61,24 +62,31 @@ def list_studies(session: Session = Depends(get_session),
             studies.append(StudyOut(
                 reference=e.reference, type=e.type, result=e.result, status=e.status,
                 patientName=pm.name, cardioId=_cardio_of(session, pm.id), patientId=pid,
+                instances=e.instances or 1,
             ))
     return studies
 
 
 @router.get("/{reference}/file", tags=["studies (PACS)"])
-def study_file(reference: str, session: Session = Depends(get_session),
+def study_file(reference: str, instance: int = 0, session: Session = Depends(get_session),
                current: User = Depends(get_current_user)):
-    """Serve the DICOM file for a study (generated on first access if needed)."""
+    """Serve one instance of a study's DICOM (instance 0 generated if synthetic)."""
     exam = session.exec(
         select(Exam).where(Exam.reference == reference, Exam.modality == "image")
     ).first()
     if not exam:
         raise HTTPException(status_code=404, detail="Étude introuvable")
     pm = session.get(PatientMaster, exam.master_id)
-    path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type,
-                        patient_id=_pacs_id(session, exam.master_id),
-                        issuer_oid=DOMAIN_OID["PACS"])
-    return FileResponse(path, media_type="application/dicom", filename=f"{reference}.dcm")
+    if instance == 0:
+        path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type,
+                            patient_id=_pacs_id(session, exam.master_id),
+                            issuer_oid=DOMAIN_OID["PACS"])
+    else:
+        path = instance_path(reference, instance)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Instance introuvable")
+    return FileResponse(str(path), media_type="application/dicom",
+                        filename=f"{reference}-{instance}.dcm")
 
 
 @router.get("/{reference}/thumbnail", tags=["studies (PACS)"])
@@ -141,29 +149,37 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     seq = len(session.exec(select(Exam).where(Exam.modality == "image")).all()) + 915
     reference = f"PACS-{seq}"
 
-    # If a real DICOM file was imported, store it so it is shown as-is;
-    # otherwise a synthetic image is generated on first access.
-    imported = False
-    if body.dicomBase64:
+    # One or several imported DICOMs form ONE study with many instances; all
+    # instances share the Study/Series UID so they group like a real PACS.
+    uploads = list(body.dicoms) if body.dicoms else ([body.dicomBase64] if body.dicomBase64 else [])
+    instances = max(1, len(uploads))
+    imported = bool(uploads)
+    if imported:
+        study_uid = generate_uid(entropy_srcs=[reference, "study"])
+        series_uid = generate_uid(entropy_srcs=[reference, "series"])
         try:
-            raw = base64.b64decode(body.dicomBase64, validate=False)
-            save_uploaded_dicom(reference, raw, patient_id=pid,
-                                patient_name=pm.name, issuer_oid=DOMAIN_OID["PACS"])
-            imported = True
+            for k, b64 in enumerate(uploads):
+                raw = base64.b64decode(b64, validate=False)
+                save_uploaded_dicom(reference, raw, patient_id=pid, patient_name=pm.name,
+                                    issuer_oid=DOMAIN_OID["PACS"], instance=k,
+                                    study_uid=study_uid, series_uid=series_uid)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    label = (f"DICOM importé ({instances} images)" if imported and instances > 1
+             else "DICOM importé" if imported else "Étude DICOM")
     exam = Exam(
         master_id=pm.id, type=body.modality, date="—", reference=reference,
-        status="Disponible",
-        result=body.description or ("DICOM importé" if imported else "Étude DICOM"),
-        modality="image", tone="brown",
+        status="Disponible", result=body.description or label,
+        modality="image", tone="brown", instances=instances,
     )
     session.add(exam)
     session.commit()
     write_audit(session, actor="PACS · RAD-54",
-                action=f"{'Import' if imported else 'Ajout'} étude DICOM ({reference})",
+                action=f"{'Import' if imported else 'Ajout'} étude DICOM ({reference}, "
+                       f"{instances} instance{'s' if instances > 1 else ''})",
                 result="Synchronisé")
     return StudyOut(reference=reference, type=body.modality,
                     result=exam.result, status="Disponible",
-                    patientName=pm.name, cardioId=body.cardioId.strip(), patientId=pid)
+                    patientName=pm.name, cardioId=body.cardioId.strip(), patientId=pid,
+                    instances=instances)

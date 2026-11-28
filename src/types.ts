@@ -47,6 +47,7 @@ export type StudyRow = {
   patientName: string;
   cardioId: string;
   patientId: string;
+  instances: number;
 };
 
 export type DicomMeta = {
