@@ -109,6 +109,14 @@ cd server
 python -m pytest tests -q
 ```
 
+Scénario de démonstration bout en bout (API lancée dans un autre terminal) —
+neuf étapes qui impriment chaque transaction, utilisable en soutenance :
+
+```bash
+cd server
+python demo_pix.py
+```
+
 ---
 
 ## Roadmap
