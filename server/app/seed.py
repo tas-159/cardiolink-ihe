@@ -118,7 +118,10 @@ def seed_if_empty() -> None:
             if first_lab:
                 session.add(PatientIdentifier(master_id=pm.id, domain="LABO", local_id=first_lab[2]))
             if first_img:
-                session.add(PatientIdentifier(master_id=pm.id, domain="PACS", local_id=first_img[2]))
+                # PACS identity is PATIENT-level (shared by all the patient's
+                # studies), not a study reference — so a PACS groups by patient.
+                session.add(PatientIdentifier(master_id=pm.id, domain="PACS",
+                                              local_id=f"PACS-{pm.master_id}"))
 
             for (etype, date, ref, status_, result, modality, tone) in p["exams"]:
                 session.add(Exam(
@@ -164,7 +167,23 @@ def ensure_pix_data() -> None:
 
             add("ECG", next((e.reference for e in exams if e.reference.startswith("ECG")), None))
             add("LABO", next((e.reference for e in exams if e.reference.startswith("LAB")), None))
-            add("PACS", next((e.reference for e in exams if e.modality == "image"), None))
+
+            # PACS identity is PATIENT-level (shared by all the patient's studies,
+            # so a PACS groups them by patient). Backfill it, and migrate any old
+            # value that had been set to a study reference.
+            want_pacs = f"PACS-{pm.master_id}"
+            img_refs = {e.reference for e in exams if e.modality == "image"}
+            pacs_row = session.exec(
+                select(PatientIdentifier).where(
+                    PatientIdentifier.master_id == pm.id,
+                    PatientIdentifier.domain == "PACS")
+            ).first()
+            if pacs_row is None:
+                if img_refs:
+                    session.add(PatientIdentifier(master_id=pm.id, domain="PACS", local_id=want_pacs))
+            elif pacs_row.local_id != want_pacs and pacs_row.local_id in img_refs:
+                pacs_row.local_id = want_pacs
+                session.add(pacs_row)
 
         # Mark one patient inactive to demonstrate PIX-008.
         youssef = session.exec(

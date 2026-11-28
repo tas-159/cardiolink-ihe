@@ -43,6 +43,7 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
     master = f"MASTER-{100 + count}"
     cardio = f"CARD-{count:03d}"
     his = f"HIS-{count:03d}"
+    pacs = f"PACS-{master}"
     name = f"{body.first_name.strip()} {body.last_name.strip()}".strip()
     initials = "".join(w[0] for w in name.split()[:2]).upper() or "??"
 
@@ -57,6 +58,7 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
     session.refresh(pm)
     session.add(PatientIdentifier(master_id=pm.id, domain="HIS", local_id=his))
     session.add(PatientIdentifier(master_id=pm.id, domain="CARDIO", local_id=cardio))
+    session.add(PatientIdentifier(master_id=pm.id, domain="PACS", local_id=pacs))
     session.commit()
     write_audit(session, actor=current.name,
                 action=f"Création dossier {cardio}", result="Validé")

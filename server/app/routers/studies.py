@@ -11,6 +11,7 @@ from ..dicom_gen import ensure_dicom, ensure_thumbnail
 from ..models import Exam, PatientIdentifier, PatientMaster, User
 from ..schemas import StudyCreate, StudyOut
 from ..security import get_current_user
+from .pix import DOMAIN_OID
 
 router = APIRouter(prefix="/studies", tags=["studies (PACS)"])
 
@@ -22,6 +23,27 @@ def _cardio_of(session: Session, master_id: int) -> str:
             PatientIdentifier.domain == "CARDIO")
     ).first()
     return row.local_id if row else ""
+
+
+def _pacs_id(session: Session, master_id: int) -> str:
+    """Patient's stable PACS-domain identifier (created if absent).
+
+    Cross-referenced by PIX, this becomes the DICOM PatientID and is shared by
+    every study of the patient, so the PACS groups studies by patient — not by
+    study reference. Returns the same value on every call for a given patient.
+    """
+    row = session.exec(
+        select(PatientIdentifier).where(
+            PatientIdentifier.master_id == master_id,
+            PatientIdentifier.domain == "PACS")
+    ).first()
+    if row:
+        return row.local_id
+    pm = session.get(PatientMaster, master_id)
+    local = f"PACS-{pm.master_id}" if pm else f"PACS-M{master_id}"
+    session.add(PatientIdentifier(master_id=master_id, domain="PACS", local_id=local))
+    session.commit()
+    return local
 
 
 @router.get("", response_model=List[StudyOut])
@@ -50,7 +72,9 @@ def study_file(reference: str, session: Session = Depends(get_session),
     if not exam:
         raise HTTPException(status_code=404, detail="Étude introuvable")
     pm = session.get(PatientMaster, exam.master_id)
-    path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type)
+    path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type,
+                        patient_id=_pacs_id(session, exam.master_id),
+                        issuer_oid=DOMAIN_OID["PACS"])
     return FileResponse(path, media_type="application/dicom", filename=f"{reference}.dcm")
 
 
@@ -64,7 +88,9 @@ def study_thumbnail(reference: str, session: Session = Depends(get_session),
     if not exam:
         raise HTTPException(status_code=404, detail="Étude introuvable")
     pm = session.get(PatientMaster, exam.master_id)
-    path = ensure_thumbnail(reference, pm.name if pm else "Anonyme", exam.type)
+    path = ensure_thumbnail(reference, pm.name if pm else "Anonyme", exam.type,
+                            patient_id=_pacs_id(session, exam.master_id),
+                            issuer_oid=DOMAIN_OID["PACS"])
     return FileResponse(path, media_type="image/png")
 
 
@@ -77,6 +103,7 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     pm = session.get(PatientMaster, row.master_id) if row else None
     if not pm:
         raise HTTPException(status_code=404, detail="Patient introuvable")
+    _pacs_id(session, pm.id)  # ensure the patient has a stable PACS identity
     seq = len(session.exec(select(Exam).where(Exam.modality == "image")).all()) + 915
     reference = f"PACS-{seq}"
     exam = Exam(

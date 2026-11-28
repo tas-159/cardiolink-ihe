@@ -23,7 +23,7 @@ STORE = BASE_DIR / "dicom_store"
 H = W = 576
 # Bump when the synthetic image changes so previously generated .dcm files in a
 # user's local store are detected as stale and regenerated on next access.
-GEN_VERSION = "2"
+GEN_VERSION = "3"
 GEN_TAG = f"cardiolink-gen-{GEN_VERSION}"
 
 
@@ -122,8 +122,15 @@ def _synthetic_cardiac(seed: int) -> np.ndarray:
     return (img * 65535).astype(np.uint16)
 
 
-def ensure_dicom(reference: str, patient_name: str, description: str = "") -> str:
-    """Return the path to <reference>.dcm, generating it on first use."""
+def ensure_dicom(reference: str, patient_name: str, description: str = "",
+                 patient_id: str = "", issuer_oid: str = "") -> str:
+    """Return the path to <reference>.dcm, generating it on first use.
+
+    `reference` identifies the STUDY; `patient_id` is the patient's stable
+    imaging-domain identifier (PACS domain, cross-referenced by PIX) and is
+    shared by every study of that patient so a PACS can group them by patient.
+    `issuer_oid` qualifies that id with its assigning authority (the PACS OID).
+    """
     STORE.mkdir(parents=True, exist_ok=True)
     path = STORE / f"{reference}.dcm"
     if path.exists():
@@ -143,18 +150,25 @@ def ensure_dicom(reference: str, patient_name: str, description: str = "") -> st
 
     file_meta = Dataset()
     file_meta.MediaStorageSOPClassUID = pydicom.uid.UltrasoundImageStorage
-    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.MediaStorageSOPInstanceUID = generate_uid(entropy_srcs=[reference, "sop"])
     file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
 
     ds = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\x00" * 128)
     ds.PatientName = patient_name or "Anonyme"
-    ds.PatientID = reference
+    # Stable patient-level identifier (same across all this patient's studies),
+    # qualified by its assigning authority — this is what groups studies by
+    # patient in a PACS; falls back to the study reference if none is supplied.
+    ds.PatientID = patient_id or reference
+    if issuer_oid:
+        ds.IssuerOfPatientID = issuer_oid
     ds.Modality = "US"
     ds.SoftwareVersions = GEN_TAG
     ds.StudyDescription = description or "Echocardiographie (synthetique)"
     ds.SeriesDescription = description or "Vue parasternale grand axe"
-    ds.StudyInstanceUID = generate_uid()
-    ds.SeriesInstanceUID = generate_uid()
+    # Deterministic per-study UIDs so a study keeps the same identity even
+    # after the file is regenerated (study = one reference).
+    ds.StudyInstanceUID = generate_uid(entropy_srcs=[reference, "study"])
+    ds.SeriesInstanceUID = generate_uid(entropy_srcs=[reference, "series"])
     ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
     ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
 
@@ -199,9 +213,10 @@ def _write_png_gray(path: str, arr: np.ndarray) -> None:
         f.write(chunk(b"IEND", b""))
 
 
-def ensure_thumbnail(reference: str, patient_name: str, description: str = "") -> str:
+def ensure_thumbnail(reference: str, patient_name: str, description: str = "",
+                     patient_id: str = "", issuer_oid: str = "") -> str:
     """Return the path to a small windowed PNG preview of the study."""
-    dcm = ensure_dicom(reference, patient_name, description)
+    dcm = ensure_dicom(reference, patient_name, description, patient_id, issuer_oid)
     png = STORE / f"{reference}.png"
     if png.exists():
         return str(png)
