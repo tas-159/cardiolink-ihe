@@ -50,8 +50,11 @@ def document_content(doc_id: int, session: Session = Depends(get_session),
     doc = session.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
+    pm = session.get(PatientMaster, doc.master_id) if doc.master_id else None
     write_audit(session, actor=current.name,
-                action=f"Consultation document « {doc.title} »", result="Autorisé")
+                action=f"Consultation document « {doc.title} »", result="Autorisé",
+                master_id=doc.master_id,
+                patient_ref=pm.master_id if pm else "")
     return DocContentOut(
         title=doc.title, patientName=doc.patient_name, docType=doc.doc_type,
         date=doc.date, author=doc.author, content=_render_content(doc),
@@ -64,8 +67,11 @@ def create_document(body: DocumentCreate, session: Session = Depends(get_session
     patient_name = ""
     master_id = None
     if body.cardioId:
+        # M3: qualified by its domain — a bare value is not an identity.
         row = session.exec(
-            select(PatientIdentifier).where(PatientIdentifier.local_id == body.cardioId.strip())
+            select(PatientIdentifier).where(
+                PatientIdentifier.local_id == body.cardioId.strip(),
+                PatientIdentifier.domain == "CARDIO")
         ).first()
         if row:
             pm = session.get(PatientMaster, row.master_id)
@@ -79,6 +85,8 @@ def create_document(body: DocumentCreate, session: Session = Depends(get_session
     session.commit()
     session.refresh(doc)
     write_audit(session, actor=current.name,
-                action=f"Dépôt document « {body.title} »", result="Validé")
+                action=f"Dépôt document « {body.title} »", result="Validé",
+                master_id=master_id,
+                patient_ref=f"CARDIO/{body.cardioId.strip()}" if body.cardioId else "")
     return DocumentOut(id=doc.id, title=doc.title, patientName=doc.patient_name,
                        docType=doc.doc_type, date=doc.date, author=doc.author)

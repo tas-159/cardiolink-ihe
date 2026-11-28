@@ -86,8 +86,38 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 | `GET/POST /studies` | imagerie DICOM | XDS-I.b · RAD-54 |
 | `GET/POST /documents` | documents cliniques | XDS.b · ITI-18/41 |
 | `GET /audit` | journal d'audit | ATNA · ITI-20 |
-| `GET /pix/{identifier}` | **rapprochement d'identité** (CARD-025 → HIS-001, LAB-301, PACS-914) | PIX · ITI-9 |
+| `GET /pix/{domain}/{identifier}` | **rapprochement d'identité** (CARDIO/CARD-025 → HIS-001, LAB-301, PACS-…) | PIX · ITI-9 |
+| `GET /pix/{domain}/{identifier}/hl7` | message d'identité émis par ce domaine | PIX · ITI-8 |
+| `GET /pix/resolve?q=&domain=` | console PIX (identifiant ou nom) ; `domain` facultatif | PIX · ITI-9 |
+| `POST /pix/identifiers` | déclarer un identifiant ; **le registre décide** du rapprochement | PIX · ITI-8 |
+| `GET /pix/pending` · `POST /pix/pending/{id}/decide` | rapprochements en attente, et décision humaine | PIX (politique de l'établissement) |
 | `GET /pix/status` | statut PIX Manager | — |
+
+> Un identifiant est **toujours** interprété avec son domaine : il n'existe
+> aucun endpoint prenant une valeur nue (dossier PIX, p.6). Le tableau
+> ci-dessus reste à régénérer depuis une source unique (INS-0.1) : plusieurs
+> de ses lignes attribuent encore un profil à un endpoint qui ne l'implémente
+> pas.
+
+---
+
+## Tests
+
+Les huit cas d'identité du dossier (PIX-001 à PIX-008), plus les tests de
+non-régression de la revue de code :
+
+```bash
+cd server
+python -m pytest tests -q
+```
+
+Scénario de démonstration bout en bout (API lancée dans un autre terminal) —
+neuf étapes qui impriment chaque transaction, utilisable en soutenance :
+
+```bash
+cd server
+python demo_pix.py
+```
 
 ---
 
@@ -104,5 +134,5 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 The PACS screen opens studies in a real client-side DICOM viewer (Cornerstone.js).
 The backend generates synthetic, uncompressed `.dcm` files on demand under
 `server/dicom_store/`. To use **real** studies, drop a file named
-`<REFERENCE>.dcm` (e.g. `PACS-914.dcm`) into that folder — the viewer reads
+`<REFERENCE>.dcm` (e.g. `STU-914.dcm`) into that folder — the viewer reads
 whatever is there. The backend needs `pydicom` + `numpy` (in `requirements.txt`).

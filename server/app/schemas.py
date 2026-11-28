@@ -52,7 +52,8 @@ class StudyMetaOut(BaseModel):
     reference: str
     patientName: str
     patientId: str
-    issuer: str
+    issuer: str       # (0010,0021) IssuerOfPatientID — the authority's NAME
+    issuerOid: str = ""  # (0010,0024) UniversalEntityID — its OID
     modality: str
     studyUid: str
     seriesUid: str
@@ -69,10 +70,12 @@ class DocumentOut(BaseModel):
 
 
 class AuditOut(BaseModel):
-    time: str
+    time: str          # legacy pre-formatted label, kept for compatibility
+    at: str = ""       # ISO 8601 with UTC offset — the front renders it local
     actor: str
     action: str
     result: str
+    patient: str = ""  # which record was consulted (correctif B)
 
 
 class UserOut(BaseModel):
@@ -111,23 +114,37 @@ class DomainOut(BaseModel):
 class PixResolveOut(BaseModel):
     mode: str  # "identifier" | "ambiguous" | "notfound"
     query: str
+    domain: Optional[str] = None  # the domain the query was resolved in
     master: Optional[str] = None
     name: Optional[str] = None
     birth: Optional[str] = None
     active: Optional[bool] = None
     identifiers: List[dict] = []
     candidates: List[dict] = []
+    # set when a cross-reference was just created and left pending (correctif A)
+    pending: bool = False
+    match_rule: str = ""
 
 
 class HL7Out(BaseModel):
     identifier: str
+    domain: str = ""
     hl7: str
 
 
 class IdentifierCreate(BaseModel):
-    patient_ref: str  # any existing local id of the patient (e.g. CARD-025)
-    domain: str
+    patient_ref: str   # an existing local id of the patient (e.g. CARD-025)
+    ref_domain: str    # the domain that issued patient_ref (e.g. CARDIO)
+    domain: str        # the domain issuing the new identifier
     local_id: str
+    # Demographics the source system declares WITH its identifier. The
+    # registry compares them to the record it holds and decides whether the
+    # cross-reference is validated or left pending (correctif A). Declaring
+    # nothing is allowed, and leaves the link pending.
+    family_name: str = ""
+    given_name: str = ""
+    birth: str = ""
+    gender: str = ""
 
 
 # ---------- requests ----------
@@ -182,6 +199,7 @@ class NoteOut(BaseModel):
     author: str
     text: str
     time: str
+    at: str = ""  # ISO 8601 with UTC offset
 
 
 class NoteCreate(BaseModel):
@@ -199,3 +217,20 @@ class DocContentOut(BaseModel):
     date: str
     author: str
     content: str
+
+
+class PendingOut(BaseModel):
+    """A cross-reference awaiting a human decision (correctif A)."""
+    identifier_id: int
+    domain: str
+    local_id: str
+    master: str
+    name: str
+    birth: str
+    declared_identity: str
+    match_rule: str
+    at: str = ""
+
+
+class DecisionIn(BaseModel):
+    decision: str  # "accept" | "reject"

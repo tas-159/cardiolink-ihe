@@ -7,3 +7,6 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.17
 pydicom==2.4.4
 numpy>=1.26
+# tests (M5) — the 8 identity cases PIX-001..008 of the project dossier
+pytest==8.3.4
+httpx==0.28.1

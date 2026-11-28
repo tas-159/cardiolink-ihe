@@ -10,6 +10,8 @@ from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
+from ..identifiers import allocate
+from .. import matching
 from ..dicom_gen import ensure_dicom, ensure_thumbnail, instance_path, save_uploaded_dicom
 from ..models import Exam, PatientIdentifier, PatientMaster, User
 from ..schemas import StudyCreate, StudyMetaOut, StudyOut
@@ -42,9 +44,15 @@ def _pacs_id(session: Session, master_id: int) -> str:
     ).first()
     if row:
         return row.local_id
-    pm = session.get(PatientMaster, master_id)
-    local = f"PACS-{pm.master_id}" if pm else f"PACS-M{master_id}"
-    session.add(PatientIdentifier(master_id=master_id, domain="PACS", local_id=local))
+    # M4: allocated from the PACS domain's own sequence. It used to be
+    # f"PACS-{pm.master_id}", which embedded the master identity in the local
+    # value and made the cross-reference registry unnecessary.
+    local = allocate(session, "PACS")
+    session.add(PatientIdentifier(
+        master_id=master_id, domain="PACS", local_id=local,
+        status=matching.STATUS_VALIDATED, match_rule=matching.RULE_SAME_DOMAIN,
+        decided_by="politique de rapprochement automatique",
+        decided_at=matching.utcnow()))
     session.commit()
     return local
 
@@ -80,7 +88,7 @@ def study_file(reference: str, instance: int = 0, session: Session = Depends(get
     if instance == 0:
         path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type,
                             patient_id=_pacs_id(session, exam.master_id),
-                            issuer_oid=DOMAIN_OID["PACS"])
+                            issuer_oid=DOMAIN_OID["PACS"], issuer_name="PACS")
     else:
         path = instance_path(reference, instance)
         if not path.exists():
@@ -101,7 +109,7 @@ def study_thumbnail(reference: str, session: Session = Depends(get_session),
     pm = session.get(PatientMaster, exam.master_id)
     path = ensure_thumbnail(reference, pm.name if pm else "Anonyme", exam.type,
                             patient_id=_pacs_id(session, exam.master_id),
-                            issuer_oid=DOMAIN_OID["PACS"])
+                            issuer_oid=DOMAIN_OID["PACS"], issuer_name="PACS")
     return FileResponse(path, media_type="image/png")
 
 
@@ -122,13 +130,19 @@ def study_metadata(reference: str, session: Session = Depends(get_session),
     pm = session.get(PatientMaster, exam.master_id)
     path = ensure_dicom(reference, pm.name if pm else "Anonyme", exam.type,
                         patient_id=_pacs_id(session, exam.master_id),
-                        issuer_oid=DOMAIN_OID["PACS"])
+                        issuer_oid=DOMAIN_OID["PACS"], issuer_name="PACS")
     ds = pydicom.dcmread(path, stop_before_pixels=True)
+    # M6: the OID lives in (0010,0024), not in (0010,0021).
+    issuer_oid = ""
+    qualifiers = getattr(ds, "IssuerOfPatientIDQualifiersSequence", None)
+    if qualifiers:
+        issuer_oid = str(getattr(qualifiers[0], "UniversalEntityID", "") or "")
     return StudyMetaOut(
         reference=reference,
         patientName=str(ds.PatientName),
         patientId=str(ds.PatientID),
         issuer=str(getattr(ds, "IssuerOfPatientID", "")),
+        issuerOid=issuer_oid,
         modality=str(getattr(ds, "Modality", "")),
         studyUid=str(ds.StudyInstanceUID),
         seriesUid=str(ds.SeriesInstanceUID),
@@ -139,15 +153,20 @@ def study_metadata(reference: str, session: Session = Depends(get_session),
 @router.post("", response_model=StudyOut, status_code=201)
 def create_study(body: StudyCreate, session: Session = Depends(get_session),
                  current: User = Depends(get_current_user)):
+    # M3: qualified by its domain — a bare value is not an identity.
     row = session.exec(
-        select(PatientIdentifier).where(PatientIdentifier.local_id == body.cardioId.strip())
+        select(PatientIdentifier).where(
+            PatientIdentifier.local_id == body.cardioId.strip(),
+            PatientIdentifier.domain == "CARDIO")
     ).first()
     pm = session.get(PatientMaster, row.master_id) if row else None
     if not pm:
         raise HTTPException(status_code=404, detail="Patient introuvable")
     pid = _pacs_id(session, pm.id)  # stable PACS identity, shared by the patient's studies
+    # A study reference is NOT a patient identifier: the STU- prefix keeps the
+    # two apart. PACS-xxx now means only "this patient, in the PACS domain".
     seq = len(session.exec(select(Exam).where(Exam.modality == "image")).all()) + 915
-    reference = f"PACS-{seq}"
+    reference = f"STU-{seq}"
 
     # One or several imported DICOMs form ONE study with many instances; all
     # instances share the Study/Series UID so they group like a real PACS.
@@ -162,7 +181,8 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
                 raw = base64.b64decode(b64, validate=False)
                 save_uploaded_dicom(reference, raw, patient_id=pid, patient_name=pm.name,
                                     issuer_oid=DOMAIN_OID["PACS"], instance=k,
-                                    study_uid=study_uid, series_uid=series_uid)
+                                    study_uid=study_uid, series_uid=series_uid,
+                                    issuer_name="PACS")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -175,10 +195,12 @@ def create_study(body: StudyCreate, session: Session = Depends(get_session),
     )
     session.add(exam)
     session.commit()
-    write_audit(session, actor="PACS · RAD-54",
-                action=f"{'Import' if imported else 'Ajout'} étude DICOM ({reference}, "
-                       f"{instances} instance{'s' if instances > 1 else ''})",
-                result="Synchronisé")
+    # The actor is the person; the transaction code belongs to the action.
+    write_audit(session, actor=current.name,
+                action=f"{'Import' if imported else 'Ajout'} étude DICOM "
+                       f"(RAD-54, {reference}, {instances} "
+                       f"instance{'s' if instances > 1 else ''})",
+                result="Synchronisé", master_id=pm.id, patient_ref=f"PACS/{pid}")
     return StudyOut(reference=reference, type=body.modality,
                     result=exam.result, status="Disponible",
                     patientName=pm.name, cardioId=body.cardioId.strip(), patientId=pid,

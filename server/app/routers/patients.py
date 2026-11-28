@@ -1,5 +1,5 @@
 """Patients. Search by name/id = PDQ-style demographic query."""
-from datetime import datetime
+from datetime import timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,6 +7,8 @@ from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
+from ..identifiers import allocate
+from .. import matching
 from ..models import Note, PatientIdentifier, PatientMaster, User
 from ..schemas import NoteCreate, NoteOut, PatientCreate, PatientOut, StatusUpdate
 from ..security import get_current_user
@@ -41,14 +43,18 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
                    current: User = Depends(get_current_user)):
     count = len(session.exec(select(PatientMaster)).all()) + 1
     master = f"MASTER-{100 + count}"
-    cardio = f"CARD-{count:03d}"
-    his = f"HIS-{count:03d}"
-    pacs = f"PACS-{master}"
-    name = f"{body.first_name.strip()} {body.last_name.strip()}".strip()
-    initials = "".join(w[0] for w in name.split()[:2]).upper() or "??"
+
+    # M2: the composite name is stored as it was entered. The front already
+    # sends the two parts separately; joining them here and splitting them back
+    # later is what produced "ALI^Amine Ben" instead of "BEN ALI^AMINE".
+    given = body.first_name.strip()
+    family = body.last_name.strip()
+    name = f"{given} {family}".strip()  # display only
+    initials = ((given[:1] + family[:1]).upper() or "??")
 
     pm = PatientMaster(
-        master_id=master, initials=initials, name=name, gender=body.gender,
+        master_id=master, initials=initials, family_name=family, given_name=given,
+        name=name, gender=body.gender,
         birth=body.birth, age=0, phone=body.phone, address="", blood=body.blood,
         allergies="Aucune connue", doctor=current.name, reason=body.reason,
         admission="—", status="Nouveau dossier",
@@ -56,12 +62,27 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
     session.add(pm)
     session.commit()
     session.refresh(pm)
-    session.add(PatientIdentifier(master_id=pm.id, domain="HIS", local_id=his))
-    session.add(PatientIdentifier(master_id=pm.id, domain="CARDIO", local_id=cardio))
-    session.add(PatientIdentifier(master_id=pm.id, domain="PACS", local_id=pacs))
+
+    # M4: each domain allocates from its own sequence. HIS and CARDIO register
+    # the patient now; PACS, LABO and ECG allocate only when imaging, lab or
+    # ECG activity actually happens for this patient — so no domain's value can
+    # be computed from another's.
+    his = allocate(session, "HIS")
+    cardio = allocate(session, "CARDIO")
+    # Validated on creation: the demographics ARE the ones being declared, by
+    # the very system opening the record — there is nothing to reconcile yet.
+    for dom, local in (("HIS", his), ("CARDIO", cardio)):
+        session.add(PatientIdentifier(
+            master_id=pm.id, domain=dom, local_id=local,
+            status=matching.STATUS_VALIDATED, match_rule=matching.RULE_SOURCE_SYSTEM,
+            declared_identity=matching.declared_label(family, given, body.birth,
+                                                      body.gender),
+            decided_by="politique de rapprochement automatique",
+            decided_at=matching.utcnow()))
     session.commit()
     write_audit(session, actor=current.name,
-                action=f"Création dossier {cardio}", result="Validé")
+                action=f"Création dossier {cardio}", result="Validé",
+                master_id=pm.id, patient_ref=f"CARDIO/{cardio}")
     return patient_out(session, pm)
 
 
@@ -75,7 +96,8 @@ def update_status(pid: int, body: StatusUpdate, session: Session = Depends(get_s
     session.add(pm)
     session.commit()
     write_audit(session, actor=current.name,
-                action=f"Statut {pm.name} : {pm.status}", result="Validé")
+                action=f"Statut {pm.name} : {pm.status}", result="Validé",
+                master_id=pm.id, patient_ref=pm.master_id)
     return patient_out(session, pm)
 
 
@@ -86,7 +108,9 @@ def list_notes(pid: int, session: Session = Depends(get_session),
         select(Note).where(Note.master_id == pid).order_by(Note.created_at.desc())
     ).all()
     return [NoteOut(id=n.id, author=n.author, text=n.text,
-                    time=n.time_label or n.created_at.strftime("%H:%M")) for n in rows]
+                    time=n.time_label or n.created_at.strftime("%H:%M"),
+                    at=n.created_at.replace(tzinfo=timezone.utc).isoformat())
+            for n in rows]
 
 
 @router.post("/{pid}/notes", response_model=NoteOut, status_code=201)
@@ -98,12 +122,15 @@ def add_note(pid: int, body: NoteCreate, session: Session = Depends(get_session)
     text = body.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Note vide")
-    now = datetime.utcnow()
-    note = Note(master_id=pid, author=current.name, text=text,
-                created_at=now, time_label=f"Aujourd'hui, {now.strftime('%H:%M')}")
+    # No pre-rendered label stored: it was both frozen and in UTC (M8).
+    now = matching.utcnow()
+    note = Note(master_id=pid, author=current.name, text=text, created_at=now)
     session.add(note)
     session.commit()
     session.refresh(note)
     write_audit(session, actor=current.name,
-                action=f"Note clinique — {pm.name}", result="Validé")
-    return NoteOut(id=note.id, author=note.author, text=note.text, time=note.time_label)
+                action=f"Note clinique — {pm.name}", result="Validé",
+                master_id=pm.id, patient_ref=pm.master_id)
+    return NoteOut(id=note.id, author=note.author, text=note.text,
+                   time=note.created_at.strftime("%H:%M"),
+                   at=note.created_at.replace(tzinfo=timezone.utc).isoformat())
