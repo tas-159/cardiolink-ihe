@@ -23,8 +23,15 @@ TYPE_MAP = {
 
 
 def _patient_by_cardio(session: Session, cardio_id: str) -> PatientMaster | None:
+    """Resolve a cardiology identifier — qualified by its domain (M3).
+
+    Without the domain filter the same value issued by another system would
+    match first and silently attach the exam to the wrong patient.
+    """
     row = session.exec(
-        select(PatientIdentifier).where(PatientIdentifier.local_id == cardio_id)
+        select(PatientIdentifier).where(
+            PatientIdentifier.local_id == cardio_id,
+            PatientIdentifier.domain == "CARDIO")
     ).first()
     return session.get(PatientMaster, row.master_id) if row else None
 

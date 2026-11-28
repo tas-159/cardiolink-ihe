@@ -2928,6 +2928,14 @@ footer p {
   background: var(--brown-950); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
 }
 .pix-search > button:disabled { opacity: .6; }
+/* M3: the identification domain of the searched value. */
+.pix-domain-select { flex: 0 1 190px; display: flex; }
+.pix-domain-select select {
+  width: 100%; padding: 0 12px; border-radius: 12px;
+  border: 1px solid var(--line, rgba(0,0,0,.12));
+  background: var(--surface, #fff); color: inherit;
+  font: inherit; cursor: pointer;
+}
 .pix-examples { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--muted, #8a7d72); }
 .pix-examples span { font-weight: 600; }
 .pix-examples button {

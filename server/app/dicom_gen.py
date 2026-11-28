@@ -24,7 +24,7 @@ STORE = BASE_DIR / "dicom_store"
 H = W = 576
 # Bump when the synthetic image changes so previously generated .dcm files in a
 # user's local store are detected as stale and regenerated on next access.
-GEN_VERSION = "3"
+GEN_VERSION = "4"  # bumped by M6 (issuer tags corrected)
 GEN_TAG = f"cardiolink-gen-{GEN_VERSION}"
 # Marker for a real DICOM a user imported — never overwritten by the generator.
 UPLOAD_TAG = "cardiolink-upload"
@@ -125,8 +125,31 @@ def _synthetic_cardiac(seed: int) -> np.ndarray:
     return (img * 65535).astype(np.uint16)
 
 
+
+def _set_patient_issuer(ds, issuer_name: str, issuer_oid: str) -> None:
+    """Write the assigning authority of PatientID the way DICOM defines it (M6).
+
+    (0010,0021) IssuerOfPatientID is an SH: it carries the authority's NAME
+    (16 characters max), not its OID. The OID belongs to
+    (0010,0024) IssuerOfPatientIDQualifiersSequence >
+    (0040,0032) UniversalEntityID, with
+    (0040,0033) UniversalEntityIDType = "ISO".
+
+    Putting an OID in (0010,0021) is both wrong and unsafe: a real OID such as
+    2.25.<uuid> overflows the 16-character SH limit.
+    """
+    if issuer_name:
+        ds.IssuerOfPatientID = issuer_name[:16]
+    if issuer_oid:
+        qualifier = Dataset()
+        qualifier.UniversalEntityID = issuer_oid
+        qualifier.UniversalEntityIDType = "ISO"
+        ds.IssuerOfPatientIDQualifiersSequence = [qualifier]
+
+
 def ensure_dicom(reference: str, patient_name: str, description: str = "",
-                 patient_id: str = "", issuer_oid: str = "") -> str:
+                 patient_id: str = "", issuer_oid: str = "",
+                 issuer_name: str = "") -> str:
     """Return the path to <reference>.dcm, generating it on first use.
 
     `reference` identifies the STUDY; `patient_id` is the patient's stable
@@ -165,8 +188,7 @@ def ensure_dicom(reference: str, patient_name: str, description: str = "",
     # qualified by its assigning authority — this is what groups studies by
     # patient in a PACS; falls back to the study reference if none is supplied.
     ds.PatientID = patient_id or reference
-    if issuer_oid:
-        ds.IssuerOfPatientID = issuer_oid
+    _set_patient_issuer(ds, issuer_name, issuer_oid)
     ds.Modality = "US"
     ds.SoftwareVersions = GEN_TAG
     ds.StudyDescription = description or "Echocardiographie (synthetique)"
@@ -207,7 +229,8 @@ def instance_path(reference: str, instance: int = 0):
 
 def save_uploaded_dicom(reference: str, data: bytes, patient_id: str,
                         patient_name: str, issuer_oid: str = "", instance: int = 0,
-                        study_uid: str = "", series_uid: str = "") -> str:
+                        study_uid: str = "", series_uid: str = "",
+                        issuer_name: str = "") -> str:
     """Store one imported DICOM image as instance `instance` of a study.
 
     Raises ValueError if `data` is not a readable DICOM. Patient identity is
@@ -222,8 +245,7 @@ def save_uploaded_dicom(reference: str, data: bytes, patient_id: str,
         raise ValueError("Fichier DICOM invalide ou illisible") from exc
 
     ds.PatientID = patient_id or reference
-    if issuer_oid:
-        ds.IssuerOfPatientID = issuer_oid
+    _set_patient_issuer(ds, issuer_name, issuer_oid)
     if patient_name:
         ds.PatientName = patient_name
     if study_uid:
@@ -264,9 +286,11 @@ def _write_png_gray(path: str, arr: np.ndarray) -> None:
 
 
 def ensure_thumbnail(reference: str, patient_name: str, description: str = "",
-                     patient_id: str = "", issuer_oid: str = "") -> str:
+                     patient_id: str = "", issuer_oid: str = "",
+                     issuer_name: str = "") -> str:
     """Return the path to a small windowed PNG preview of the study."""
-    dcm = ensure_dicom(reference, patient_name, description, patient_id, issuer_oid)
+    dcm = ensure_dicom(reference, patient_name, description, patient_id,
+                       issuer_oid, issuer_name)
     png = STORE / f"{reference}.png"
     if png.exists():
         return str(png)

@@ -64,8 +64,11 @@ def create_document(body: DocumentCreate, session: Session = Depends(get_session
     patient_name = ""
     master_id = None
     if body.cardioId:
+        # M3: qualified by its domain — a bare value is not an identity.
         row = session.exec(
-            select(PatientIdentifier).where(PatientIdentifier.local_id == body.cardioId.strip())
+            select(PatientIdentifier).where(
+                PatientIdentifier.local_id == body.cardioId.strip(),
+                PatientIdentifier.domain == "CARDIO")
         ).first()
         if row:
             pm = session.get(PatientMaster, row.master_id)

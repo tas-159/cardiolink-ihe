@@ -831,7 +831,7 @@ function PatientRecord({
     setStatus(patient.status);
     reloadNotes();
     api
-      .pixResolve(patient.cardioId)
+      .pixResolve(patient.cardioId, "CARDIO")
       .then((r) =>
         setIdentifiers((r as { identifiers: { domain: string; local_id: string }[] }).identifiers ?? []),
       )
@@ -841,7 +841,7 @@ function PatientRecord({
 
   async function showHl7() {
     try {
-      const res = await api.pixHl7(patient.cardioId);
+      const res = await api.pixHl7("CARDIO", patient.cardioId);
       setHl7((res as { hl7: string }).hl7);
     } catch {
       onAction("Message HL7 indisponible.");
@@ -2671,12 +2671,22 @@ type PixIdentifier = { domain: string; local_id: string };
 type PixResult = {
   mode: "identifier" | "ambiguous" | "notfound";
   query: string;
+  // M3: the domain the query was resolved in. When the same value exists in
+  // several domains the answer is "ambiguous" and each candidate says which
+  // domain issued it — the registry never picks one on its own.
+  domain?: string | null;
   master?: string;
   name?: string;
   birth?: string;
   active?: boolean;
   identifiers: PixIdentifier[];
-  candidates: { master: string; name: string; birth: string }[];
+  candidates: {
+    master: string;
+    name: string;
+    birth: string;
+    domain?: string;
+    local_id?: string;
+  }[];
 };
 type DomainInfo = { code: string; name: string; oid: string; count: number };
 
@@ -2701,6 +2711,7 @@ function PixView({
 }) {
   const { pix } = useStore();
   const [query, setQuery] = useState("");
+  const [domain, setDomain] = useState("");
   const [result, setResult] = useState<PixResult | null>(null);
   const [hl7, setHl7] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2720,7 +2731,7 @@ function PixView({
     setError("");
     setHl7(null);
     try {
-      setResult((await api.pixResolve(query.trim())) as PixResult);
+      setResult((await api.pixResolve(query.trim(), domain || undefined)) as PixResult);
     } catch (err) {
       setResult(null);
       setError(err instanceof Error ? err.message : "Erreur réseau");
@@ -2730,12 +2741,12 @@ function PixView({
   }
 
   async function viewHl7(result: PixResult) {
-    const ref =
-      result.identifiers.find((i) => i.domain === "CARDIO")?.local_id ??
-      result.identifiers[0]?.local_id;
-    if (!ref) return;
+    // M3: carry the domain that issued the identifier, not the value alone.
+    const source =
+      result.identifiers.find((i) => i.domain === "CARDIO") ?? result.identifiers[0];
+    if (!source) return;
     try {
-      const res = await api.pixHl7(ref);
+      const res = await api.pixHl7(source.domain, source.local_id);
       setHl7((res as { hl7: string }).hl7);
     } catch {
       onAction("Message HL7 indisponible.");
@@ -2789,6 +2800,21 @@ function PixView({
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Identifiant (ex. CARD-025) ou nom du patient"
             />
+          </label>
+          <label className="pix-domain-select">
+            <span className="sr-only">Domaine d’identification</span>
+            <select
+              value={domain}
+              onChange={(event) => setDomain(event.target.value)}
+              title="Domaine d’identification de la valeur recherchée"
+            >
+              <option value="">Tous les domaines</option>
+              {domains.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {DOMAIN_LABELS[d.code] ?? d.code}
+                </option>
+              ))}
+            </select>
           </label>
           <button type="submit" disabled={loading}>
             {loading ? "Recherche…" : "Interroger PIX"} <Icon name="arrow" size={16} />
@@ -2952,6 +2978,7 @@ function AddIdentifierModal({
     try {
       const updated = (await api.pixAddIdentifier({
         patient_ref: get("patient_ref"),
+        ref_domain: "CARDIO", // M3: the select lists cardiology identifiers
         domain: get("domain"),
         local_id: get("local_id"),
       })) as PixResult;

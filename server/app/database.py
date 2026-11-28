@@ -27,6 +27,13 @@ def ensure_schema() -> None:
         if cols and "active" not in cols:
             conn.execute(text("ALTER TABLE patientmaster ADD COLUMN active BOOLEAN DEFAULT 1"))
             conn.commit()
+        # M2: family_name / given_name added when PID-5 stopped being
+        # rebuilt by splitting the display name.
+        for column in ("family_name", "given_name"):
+            if cols and column not in cols:
+                conn.execute(text(
+                    f"ALTER TABLE patientmaster ADD COLUMN {column} VARCHAR DEFAULT ''"))
+                conn.commit()
         exam_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(exam)"))]
         if exam_cols and "instances" not in exam_cols:
             conn.execute(text("ALTER TABLE exam ADD COLUMN instances INTEGER DEFAULT 1"))

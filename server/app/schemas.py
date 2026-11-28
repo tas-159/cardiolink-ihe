@@ -52,7 +52,8 @@ class StudyMetaOut(BaseModel):
     reference: str
     patientName: str
     patientId: str
-    issuer: str
+    issuer: str       # (0010,0021) IssuerOfPatientID — the authority's NAME
+    issuerOid: str = ""  # (0010,0024) UniversalEntityID — its OID
     modality: str
     studyUid: str
     seriesUid: str
@@ -111,6 +112,7 @@ class DomainOut(BaseModel):
 class PixResolveOut(BaseModel):
     mode: str  # "identifier" | "ambiguous" | "notfound"
     query: str
+    domain: Optional[str] = None  # the domain the query was resolved in
     master: Optional[str] = None
     name: Optional[str] = None
     birth: Optional[str] = None
@@ -121,12 +123,14 @@ class PixResolveOut(BaseModel):
 
 class HL7Out(BaseModel):
     identifier: str
+    domain: str = ""
     hl7: str
 
 
 class IdentifierCreate(BaseModel):
-    patient_ref: str  # any existing local id of the patient (e.g. CARD-025)
-    domain: str
+    patient_ref: str   # an existing local id of the patient (e.g. CARD-025)
+    ref_domain: str    # the domain that issued patient_ref (e.g. CARDIO)
+    domain: str        # the domain issuing the new identifier
     local_id: str
 
 

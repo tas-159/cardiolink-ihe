@@ -3,7 +3,9 @@ app shows identical content on first run. Idempotent: only runs when empty."""
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import AuditLog, Document, Exam, PatientIdentifier, PatientMaster, User
+from .audit import write_audit
+from .identifiers import allocate
+from .models import Document, Exam, PatientIdentifier, PatientMaster, User
 from .security import hash_password
 
 USERS = [
@@ -15,7 +17,8 @@ USERS = [
 # (master, patient fields..., [exams])
 PATIENTS = [
     {
-        "initials": "AB", "name": "Amine Ben Ali", "gender": "Homme",
+        "initials": "AB", "name": "Amine Ben Ali", "family": "Ben Ali",
+        "given": "Amine", "gender": "Homme",
         "birth": "12 mai 1988", "age": 38, "master": "MASTER-77",
         "cardioId": "CARD-025", "hisId": "HIS-001", "phone": "+216 22 431 879",
         "address": "18 rue des Jasmins, Tunis", "blood": "O+",
@@ -29,7 +32,8 @@ PATIENTS = [
         ],
     },
     {
-        "initials": "SC", "name": "Sofia Cherif", "gender": "Femme",
+        "initials": "SC", "name": "Sofia Cherif", "family": "Cherif",
+        "given": "Sofia", "gender": "Femme",
         "birth": "3 février 1976", "age": 50, "master": "MASTER-81",
         "cardioId": "CARD-041", "hisId": "HIS-018", "phone": "+216 55 902 144",
         "address": "7 avenue de Carthage, Ariana", "blood": "A+",
@@ -42,7 +46,8 @@ PATIENTS = [
         ],
     },
     {
-        "initials": "YM", "name": "Youssef Mansour", "gender": "Homme",
+        "initials": "YM", "name": "Youssef Mansour", "family": "Mansour",
+        "given": "Youssef", "gender": "Homme",
         "birth": "27 août 1959", "age": 67, "master": "MASTER-52",
         "cardioId": "CARD-019", "hisId": "HIS-112", "phone": "+216 98 230 571",
         "address": "42 rue Ibn Khaldoun, Sousse", "blood": "B-",
@@ -55,7 +60,8 @@ PATIENTS = [
         ],
     },
     {
-        "initials": "IN", "name": "Inès Nouira", "gender": "Femme",
+        "initials": "IN", "name": "Inès Nouira", "family": "Nouira",
+        "given": "Inès", "gender": "Femme",
         "birth": "19 novembre 1994", "age": 31, "master": "MASTER-93",
         "cardioId": "CARD-058", "hisId": "HIS-207", "phone": "+216 26 774 305",
         "address": "5 résidence El Bahia, Nabeul", "blood": "AB+",
@@ -75,12 +81,12 @@ DOCUMENTS = [
     ("Lettre de suivi", "Inès Nouira", "PDF", "14 oct. 2026", "Dr Sami Gharbi"),
 ]
 
-AUDIT = [
-    ("Aujourd'hui, 10:18", "Dr L. Martin", "Consultation PIX", "Autorisé"),
-    ("Aujourd'hui, 10:14", "PACS · RAD-54", "Ajout étude DICOM", "Synchronisé"),
-    ("Aujourd'hui, 09:32", "ECG · LAB-3", "Résultat transmis", "Synchronisé"),
-    ("Aujourd'hui, 09:06", "PIX Manager", "Rapprochement CARD-025", "Validé"),
-]
+# M1: there is no hardcoded audit journal any more. The previous version
+# inserted four invented entries referencing RAD-54 and LAB-3 — transactions
+# this application never performs. A journal that contains events that never
+# happened is not an audit trail. The entries below are now written by
+# write_audit() as the seeding actually performs each operation.
+SEED_ACTOR = "Jeu de données de démonstration"
 
 
 def seed_if_empty() -> None:
@@ -97,6 +103,7 @@ def seed_if_empty() -> None:
         for p in PATIENTS:
             pm = PatientMaster(
                 master_id=p["master"], initials=p["initials"], name=p["name"],
+                family_name=p["family"], given_name=p["given"],
                 gender=p["gender"], birth=p["birth"], age=p["age"], phone=p["phone"],
                 address=p["address"], blood=p["blood"], allergies=p["allergies"],
                 doctor=p["doctor"], reason=p["reason"], admission=p["admission"],
@@ -119,9 +126,10 @@ def seed_if_empty() -> None:
                 session.add(PatientIdentifier(master_id=pm.id, domain="LABO", local_id=first_lab[2]))
             if first_img:
                 # PACS identity is PATIENT-level (shared by all the patient's
-                # studies), not a study reference — so a PACS groups by patient.
+                # studies), not a study reference. M4: allocated by the PACS
+                # domain's own sequence, never derived from the master id.
                 session.add(PatientIdentifier(master_id=pm.id, domain="PACS",
-                                              local_id=f"PACS-{pm.master_id}"))
+                                              local_id=allocate(session, "PACS")))
 
             for (etype, date, ref, status_, result, modality, tone) in p["exams"]:
                 session.add(Exam(
@@ -130,14 +138,29 @@ def seed_if_empty() -> None:
                 ))
             session.commit()
 
+            # M1: real audit entries for the operations just performed.
+            # The actor is the seeding itself — no clinician is credited with
+            # something they did not do, and the transaction code stays in the
+            # action, never in the actor field.
+            write_audit(session, actor=SEED_ACTOR,
+                        action=f"Déclaration d'identité {p['hisId']} "
+                               f"(domaine HIS, ITI-8)", result="Validé")
+            n_domains = len(session.exec(
+                select(PatientIdentifier).where(PatientIdentifier.master_id == pm.id)
+            ).all())
+            write_audit(session, actor=SEED_ACTOR,
+                        action=f"Rapprochement d'identité {pm.master_id} "
+                               f"({n_domains} domaines)", result="Validé")
+            for (etype, _d, ref, _s, _r, _m, _t) in p["exams"]:
+                write_audit(session, actor=SEED_ACTOR,
+                            action=f"Enregistrement examen {ref} ({etype})",
+                            result="Validé")
+
         for title, patient_name, doc_type, date, author in DOCUMENTS:
             session.add(Document(
                 title=title, patient_name=patient_name, doc_type=doc_type,
                 date=date, author=author,
             ))
-
-        for time_label, actor, action, result in AUDIT:
-            session.add(AuditLog(time_label=time_label, actor=actor, action=action, result=result))
 
         session.commit()
 
@@ -171,19 +194,33 @@ def ensure_pix_data() -> None:
             # PACS identity is PATIENT-level (shared by all the patient's studies,
             # so a PACS groups them by patient). Backfill it, and migrate any old
             # value that had been set to a study reference.
-            want_pacs = f"PACS-{pm.master_id}"
             img_refs = {e.reference for e in exams if e.modality == "image"}
             pacs_row = session.exec(
                 select(PatientIdentifier).where(
                     PatientIdentifier.master_id == pm.id,
                     PatientIdentifier.domain == "PACS")
             ).first()
-            if pacs_row is None:
-                if img_refs:
-                    session.add(PatientIdentifier(master_id=pm.id, domain="PACS", local_id=want_pacs))
-            elif pacs_row.local_id != want_pacs and pacs_row.local_id in img_refs:
-                pacs_row.local_id = want_pacs
+            if pacs_row is None and img_refs:
+                session.add(PatientIdentifier(master_id=pm.id, domain="PACS",
+                                              local_id=allocate(session, "PACS")))
+            elif pacs_row is not None and (pacs_row.local_id in img_refs
+                                           or pm.master_id in pacs_row.local_id):
+                # M4 migration: an old value that was a study reference, or that
+                # embedded the master id (PACS-MASTER-77), is replaced by one
+                # allocated by the PACS domain itself.
+                pacs_row.local_id = allocate(session, "PACS")
                 session.add(pacs_row)
+
+        # M2 migration: fill family/given on rows created before the split.
+        # A space split is the only thing available retroactively and it is
+        # wrong for compound family names; the demo rows above carry the
+        # correct values, so this only affects patients created earlier.
+        for pm in patients:
+            if not (pm.family_name or pm.given_name):
+                parts = pm.name.split()
+                pm.family_name = parts[-1] if parts else pm.name
+                pm.given_name = " ".join(parts[:-1]) if len(parts) > 1 else ""
+                session.add(pm)
 
         # Mark one patient inactive to demonstrate PIX-008.
         youssef = session.exec(
@@ -200,7 +237,8 @@ def ensure_pix_data() -> None:
         ).first()
         if not homonym:
             hm = PatientMaster(
-                master_id="MASTER-99", initials="AB", name="Amine Ben Ali", gender="Homme",
+                master_id="MASTER-99", initials="AB", name="Amine Ben Ali",
+                family_name="Ben Ali", given_name="Amine", gender="Homme",
                 birth="4 mars 1991", age=35, phone="+216 24 118 663",
                 address="30 rue de Marseille, Tunis", blood="A-", allergies="Aucune connue",
                 doctor="Dr Sami Gharbi", reason="Homonyme — cas de test PIX",

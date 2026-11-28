@@ -71,9 +71,18 @@ export const api = {
     request("/documents", { method: "POST", body: JSON.stringify(body) }),
   audit: () => request("/audit"),
   pixStatus: () => request("/pix/status"),
-  pixResolve: (q: string) => request(`/pix/resolve?q=${encodeURIComponent(q)}`),
+  // M3: an identifier is always interpreted with its domain. `domain` is
+  // optional here only because the console also accepts a patient name.
+  pixResolve: (q: string, domain?: string) =>
+    request(
+      `/pix/resolve?q=${encodeURIComponent(q)}` +
+        (domain ? `&domain=${encodeURIComponent(domain)}` : ""),
+    ),
   pixDomains: () => request("/pix/domains"),
-  pixHl7: (identifier: string) => request(`/pix/${encodeURIComponent(identifier)}/hl7`),
+  pixQuery: (domain: string, identifier: string) =>
+    request(`/pix/${encodeURIComponent(domain)}/${encodeURIComponent(identifier)}`),
+  pixHl7: (domain: string, identifier: string) =>
+    request(`/pix/${encodeURIComponent(domain)}/${encodeURIComponent(identifier)}/hl7`),
   pixAddIdentifier: (body: unknown) =>
     request("/pix/identifiers", { method: "POST", body: JSON.stringify(body) }),
 };

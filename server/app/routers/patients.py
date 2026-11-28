@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from ..audit import write_audit
 from ..database import get_session
+from ..identifiers import allocate
 from ..models import Note, PatientIdentifier, PatientMaster, User
 from ..schemas import NoteCreate, NoteOut, PatientCreate, PatientOut, StatusUpdate
 from ..security import get_current_user
@@ -41,14 +42,18 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
                    current: User = Depends(get_current_user)):
     count = len(session.exec(select(PatientMaster)).all()) + 1
     master = f"MASTER-{100 + count}"
-    cardio = f"CARD-{count:03d}"
-    his = f"HIS-{count:03d}"
-    pacs = f"PACS-{master}"
-    name = f"{body.first_name.strip()} {body.last_name.strip()}".strip()
-    initials = "".join(w[0] for w in name.split()[:2]).upper() or "??"
+
+    # M2: the composite name is stored as it was entered. The front already
+    # sends the two parts separately; joining them here and splitting them back
+    # later is what produced "ALI^Amine Ben" instead of "BEN ALI^AMINE".
+    given = body.first_name.strip()
+    family = body.last_name.strip()
+    name = f"{given} {family}".strip()  # display only
+    initials = ((given[:1] + family[:1]).upper() or "??")
 
     pm = PatientMaster(
-        master_id=master, initials=initials, name=name, gender=body.gender,
+        master_id=master, initials=initials, family_name=family, given_name=given,
+        name=name, gender=body.gender,
         birth=body.birth, age=0, phone=body.phone, address="", blood=body.blood,
         allergies="Aucune connue", doctor=current.name, reason=body.reason,
         admission="—", status="Nouveau dossier",
@@ -56,9 +61,15 @@ def create_patient(body: PatientCreate, session: Session = Depends(get_session),
     session.add(pm)
     session.commit()
     session.refresh(pm)
+
+    # M4: each domain allocates from its own sequence. HIS and CARDIO register
+    # the patient now; PACS, LABO and ECG allocate only when imaging, lab or
+    # ECG activity actually happens for this patient — so no domain's value can
+    # be computed from another's.
+    his = allocate(session, "HIS")
+    cardio = allocate(session, "CARDIO")
     session.add(PatientIdentifier(master_id=pm.id, domain="HIS", local_id=his))
     session.add(PatientIdentifier(master_id=pm.id, domain="CARDIO", local_id=cardio))
-    session.add(PatientIdentifier(master_id=pm.id, domain="PACS", local_id=pacs))
     session.commit()
     write_audit(session, actor=current.name,
                 action=f"Création dossier {cardio}", result="Validé")
