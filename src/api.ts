@@ -67,6 +67,13 @@ export const api = {
   createStudy: (body: unknown) =>
     request("/studies", { method: "POST", body: JSON.stringify(body) }),
   documents: () => request("/documents"),
+  // ITI-18 — Registry Stored Query: returns metadata, never the documents.
+  documentQuery: (domain: string, patient: string) =>
+    request(
+      `/documents/query?domain=${encodeURIComponent(domain)}` +
+        `&patient=${encodeURIComponent(patient)}`,
+    ),
+  documentMetadata: (docId: number) => request(`/documents/${docId}/metadata`),
   createDocument: (body: unknown) =>
     request("/documents", { method: "POST", body: JSON.stringify(body) }),
   audit: () => request("/audit"),
@@ -93,6 +100,20 @@ export const api = {
       body: JSON.stringify({ decision }),
     }),
 };
+
+// ITI-43 — Retrieve Document Set: fetch the real file and save it.
+export async function downloadDocument(uniqueId: string, fileName: string) {
+  const res = await fetch(`${BASE}/documents/${encodeURIComponent(uniqueId)}/retrieve`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+  });
+  if (!res.ok) throw new Error("Document indisponible dans le dépôt.");
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 // Fetch a study's PNG preview with auth and return an object URL for <img>.
 export async function studyThumbUrl(reference: string): Promise<string> {

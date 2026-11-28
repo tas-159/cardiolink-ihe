@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-import { api, studyThumbUrl } from "./api";
+import { api, downloadDocument, studyThumbUrl } from "./api";
 import {
   cornerstone,
   cornerstoneTools,
@@ -10,7 +10,7 @@ import {
 } from "./dicom";
 import { localDateTime, localTime } from "./format";
 import { useStore } from "./store";
-import type { DicomMeta, Patient, PendingLink, StudyRow } from "./types";
+import type { DicomMeta, DocumentEntry, Patient, PendingLink, StudyRow } from "./types";
 
 const DOMAIN_LABELS: Record<string, string> = {
   HIS: "Administration (HIS)",
@@ -1702,7 +1702,7 @@ function DocumentsView({
   onAction: (message: string) => void;
   onAdd: () => void;
 }) {
-  const { documents } = useStore();
+  const { documents, patients } = useStore();
   const [viewer, setViewer] = useState<{
     title: string;
     patientName: string;
@@ -1710,8 +1710,18 @@ function DocumentsView({
     date: string;
     author: string;
     content: string;
+    uniqueId?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    patientId?: string;
+    sourcePatientId?: string;
+    hash?: string;
   } | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
+  // ITI-18: query the registry by a qualified patient identifier.
+  const [queryPatient, setQueryPatient] = useState("");
+  const [entries, setEntries] = useState<DocumentEntry[] | null>(null);
+  const [querying, setQuerying] = useState(false);
 
   async function openDoc(docId: number) {
     setLoadingId(docId);
@@ -1723,6 +1733,33 @@ function DocumentsView({
       setLoadingId(null);
     }
   }
+
+  async function runQuery() {
+    if (!queryPatient) return;
+    setQuerying(true);
+    try {
+      const rows = (await api.documentQuery("CARDIO", queryPatient)) as DocumentEntry[];
+      setEntries(rows);
+      onAction(`Registre interrogé (ITI-18) : ${rows.length} document(s).`);
+    } catch (err) {
+      onAction(err instanceof Error ? err.message : "Interrogation impossible.");
+    } finally {
+      setQuerying(false);
+    }
+  }
+
+  async function retrieve(uniqueId: string, title: string, mimeType?: string) {
+    try {
+      const extension = mimeType === "text/xml" ? "xml" : "pdf";
+      await downloadDocument(uniqueId, `${title}.${extension}`);
+      onAction(`Document récupéré depuis le dépôt (ITI-43).`);
+    } catch (err) {
+      onAction(err instanceof Error ? err.message : "Récupération impossible.");
+    }
+  }
+
+  const kilobytes = (bytes?: number) =>
+    bytes ? `${(bytes / 1024).toFixed(1)} ko` : "—";
 
   return (
     <>
@@ -1736,21 +1773,92 @@ function DocumentsView({
           </button>
         }
       />
+      <section className="panel doc-query">
+        <div className="panel-head">
+          <div>
+            <h2>Interroger le registre</h2>
+            <p>
+              Recherche par identifiant qualifié, jamais par le nom — deux
+              patients homonymes existent dans ce jeu de données.
+            </p>
+          </div>
+        </div>
+        <div className="doc-query-row">
+          <label>
+            <span className="sr-only">Patient</span>
+            <select value={queryPatient} onChange={(e) => setQueryPatient(e.target.value)}>
+              <option value="">Sélectionner un patient (domaine CARDIO)</option>
+              {patients.map((patient) => (
+                <option key={patient.id} value={patient.cardioId}>
+                  {patient.name} · {patient.cardioId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button onClick={runQuery} disabled={!queryPatient || querying}>
+            {querying ? "Interrogation…" : "Interroger (ITI-18)"}{" "}
+            <Icon name="arrow" size={16} />
+          </button>
+          {entries && (
+            <button className="doc-query-clear" onClick={() => setEntries(null)}>
+              Effacer
+            </button>
+          )}
+        </div>
+        {entries && (
+          <div className="doc-entries">
+            {entries.length === 0 && (
+              <p className="doc-empty">Aucun document pour ce patient.</p>
+            )}
+            {entries.map((entry) => (
+              <div className="doc-entry" key={entry.uniqueId}>
+                <div>
+                  <strong>{entry.title}</strong>
+                  <small className="mono">uniqueId {entry.uniqueId}</small>
+                  <small className="mono">patientId {entry.patientId}</small>
+                  <small className="mono">sourcePatientId {entry.sourcePatientId}</small>
+                  <small>
+                    {entry.classCode} · {entry.mimeType} · {kilobytes(entry.sizeBytes)} ·{" "}
+                    {entry.availabilityStatus}
+                  </small>
+                </div>
+                <button onClick={() => retrieve(entry.uniqueId, entry.title, entry.mimeType)}>
+                  Récupérer (ITI-43)
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="panel document-list">
         {documents.map((doc) => (
-          <button key={doc.id} onClick={() => openDoc(doc.id)} disabled={loadingId === doc.id}>
-            <span className="doc-icon">
-              <Icon name="document" size={20} />
-            </span>
-            <span>
-              <strong>{doc.title}</strong>
-              <small>
-                {doc.patientName} · {doc.docType} · {doc.date}
-              </small>
-            </span>
-            <em>{doc.author}</em>
-            <Icon name="chevron" size={17} />
-          </button>
+          <div className="doc-line" key={doc.id}>
+            <button onClick={() => openDoc(doc.id)} disabled={loadingId === doc.id}>
+              <span className="doc-icon">
+                <Icon name="document" size={20} />
+              </span>
+              <span>
+                <strong>{doc.title}</strong>
+                <small>
+                  {doc.patientName} · {doc.docType} · {doc.date} ·{" "}
+                  {kilobytes(doc.sizeBytes)}
+                </small>
+                <small className="mono dim">{doc.uniqueId}</small>
+              </span>
+              <em>{doc.author}</em>
+              <Icon name="chevron" size={17} />
+            </button>
+            {doc.uniqueId && (
+              <button
+                className="doc-download"
+                title="Récupérer le fichier depuis le dépôt (ITI-43)"
+                onClick={() => retrieve(doc.uniqueId!, doc.title, doc.mimeType)}
+              >
+                <Icon name="document" size={15} /> Télécharger
+              </button>
+            )}
+          </div>
         ))}
       </section>
       {viewer && (
@@ -1775,7 +1883,37 @@ function DocumentsView({
                 ×
               </button>
             </div>
+            <dl className="doc-meta">
+              <div>
+                <dt>uniqueId</dt>
+                <dd className="mono">{viewer.uniqueId || "—"}</dd>
+              </div>
+              <div>
+                <dt>Patient (domaine d’affinité)</dt>
+                <dd className="mono">{viewer.patientId || "—"}</dd>
+              </div>
+              <div>
+                <dt>Patient (système source)</dt>
+                <dd className="mono">{viewer.sourcePatientId || "—"}</dd>
+              </div>
+              <div>
+                <dt>Format · taille</dt>
+                <dd className="mono">
+                  {viewer.mimeType || "—"} · {kilobytes(viewer.sizeBytes)}
+                </dd>
+              </div>
+            </dl>
             <pre className="doc-content">{viewer.content}</pre>
+            <div className="modal-actions">
+              <button
+                onClick={() =>
+                  viewer.uniqueId &&
+                  retrieve(viewer.uniqueId, viewer.title, viewer.mimeType)
+                }
+              >
+                Récupérer le fichier (ITI-43)
+              </button>
+            </div>
             <div className="modal-note">
               <Icon name="shield" size={15} />
               Document partagé via IHE XDS.b · accès tracé (ATNA).
@@ -2233,6 +2371,7 @@ function AddModal({
         const docType = get("doc_type");
         await store.createDocument({
           cardioId: get("cardioId"),
+          source_domain: "CARDIO", // the identifier is qualified by its domain
           title: docType || "Document clinique",
           doc_type: docType === "Compte rendu" ? "CDA" : "PDF",
         });

@@ -90,13 +90,37 @@ class Exam(SQLModel, table=True):
 
 
 class Document(SQLModel, table=True):
+    """A shared clinical document and its XDS.b DocumentEntry metadata.
+
+    The authoritative link to the patient is `source_patient_id`, a qualified
+    identifier. `patient_name` is a cached display value and must never be
+    used to find the patient: two homonyms exist in the demo data set, which
+    is precisely the confusion XDS and PIX exist to prevent.
+    """
     id: Optional[int] = Field(default=None, primary_key=True)
     master_id: Optional[int] = Field(default=None, foreign_key="patientmaster.id", index=True)
     title: str
-    patient_name: str = ""
-    doc_type: str = "PDF"  # CDA / PDF
+    patient_name: str = ""  # display only — NOT the link
+    doc_type: str = "PDF"   # CDA / PDF
     date: str = ""
     author: str = ""
+
+    # ---- DocumentEntry (XDS.b) ----
+    unique_id: str = Field(default="", index=True)   # DocumentEntry.uniqueId
+    entry_uuid: str = ""                             # registry entryUUID
+    repository_unique_id: str = ""
+    class_code: str = ""
+    type_code: str = ""
+    format_code: str = ""
+    mime_type: str = ""
+    availability_status: str = "Approved"
+    patient_id: str = ""         # affinity-domain identity, CX form
+    source_patient_id: str = ""  # producing system's identity, CX form
+    creation_time: Optional[datetime] = None
+    size_bytes: int = 0
+    hash_sha1: str = ""
+    file_name: str = ""     # in server/document_store
+    content_text: str = ""  # what the in-app preview shows
 
 
 class AuditLog(SQLModel, table=True):

@@ -51,10 +51,33 @@ export type PendingLink = {
 export type DocRow = {
   id: number;
   title: string;
-  patientName: string;
+  patientName: string; // display only — the link is the qualified identifier
   docType: string;
   date: string;
   author: string;
+  uniqueId?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  classCode?: string;
+  availabilityStatus?: string;
+};
+/** DocumentEntry metadata returned by the registry query (ITI-18). */
+export type DocumentEntry = {
+  uniqueId: string;
+  entryUUID: string;
+  repositoryUniqueId: string;
+  title: string;
+  classCode: string;
+  typeCode: string;
+  formatCode: string;
+  mimeType: string;
+  availabilityStatus: string;
+  patientId: string;
+  sourcePatientId: string;
+  author: string;
+  creationTime: string;
+  sizeBytes: number;
+  hash: string;
 };
 export type StudyRow = {
   reference: string;

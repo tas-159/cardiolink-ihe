@@ -58,6 +58,30 @@ def ensure_schema() -> None:
                     conn.execute(text(
                         f"ALTER TABLE auditlog ADD COLUMN {column} {ddl}"))
                     conn.commit()
+        # Correctif 2: the XDS.b DocumentEntry metadata.
+        doc_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(document)"))]
+        if doc_cols:
+            for column, ddl in (
+                ("unique_id", "VARCHAR DEFAULT ''"),
+                ("entry_uuid", "VARCHAR DEFAULT ''"),
+                ("repository_unique_id", "VARCHAR DEFAULT ''"),
+                ("class_code", "VARCHAR DEFAULT ''"),
+                ("type_code", "VARCHAR DEFAULT ''"),
+                ("format_code", "VARCHAR DEFAULT ''"),
+                ("mime_type", "VARCHAR DEFAULT ''"),
+                ("availability_status", "VARCHAR DEFAULT 'Approved'"),
+                ("patient_id", "VARCHAR DEFAULT ''"),
+                ("source_patient_id", "VARCHAR DEFAULT ''"),
+                ("creation_time", "DATETIME"),
+                ("size_bytes", "INTEGER DEFAULT 0"),
+                ("hash_sha1", "VARCHAR DEFAULT ''"),
+                ("file_name", "VARCHAR DEFAULT ''"),
+                ("content_text", "VARCHAR DEFAULT ''"),
+            ):
+                if column not in doc_cols:
+                    conn.execute(text(
+                        f"ALTER TABLE document ADD COLUMN {column} {ddl}"))
+                    conn.commit()
         exam_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(exam)"))]
         if exam_cols and "instances" not in exam_cols:
             conn.execute(text("ALTER TABLE exam ADD COLUMN instances INTEGER DEFAULT 1"))

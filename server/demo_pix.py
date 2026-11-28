@@ -115,7 +115,30 @@ print(f"   (0010,0024) OID           : {m['issuerOid']}")
 back = c.get(f"/pix/PACS/{m['patientId']}").json()
 print(f"   retour par PIX            : {back['master']}  {back['name']}")
 
-print("\n### 10 · Journal d'audit : qui, quoi, QUEL PATIENT, et à quelle heure")
+print("\n### 10 · XDS.b — documents partagés, et l'homonyme protégé")
+pub = c.post("/documents", json={
+    "cardioId": "CARD-025", "source_domain": "CARDIO",
+    "title": "Compte rendu de démonstration", "doc_type": "CDA"})
+if pub.status_code == 201:
+    d = pub.json()
+    print(f"   ITI-41 publier   : {d['uniqueId']}  {d['mimeType']}  {d['sizeBytes']} octets")
+for who, label in (("CARD-025", "Amine Ben Ali (MASTER-77)"),
+                   ("CARD-090", "son HOMONYME (MASTER-99)")):
+    rows = c.get("/documents/query", params={"domain": "CARDIO", "patient": who}).json()
+    print(f"   ITI-18 registre  : {who} — {label} -> {len(rows)} document(s)")
+    for e in rows[:2]:
+        print(f"       {e['title']}")
+        print(f"         patientId       = {e['patientId']}")
+        print(f"         sourcePatientId = {e['sourcePatientId']}")
+rows = c.get("/documents/query", params={"domain": "CARDIO", "patient": "CARD-025"}).json()
+if rows:
+    got = c.get(f"/documents/{rows[0]['uniqueId']}/retrieve")
+    head = got.content[:40].decode("utf-8", "replace").splitlines()[0]
+    print(f"   ITI-43 récupérer : {got.status_code}  {got.headers['content-type']}  "
+          f"{len(got.content)} octets")
+    print(f"       début du fichier : {head}")
+
+print("\n### 11 · Journal d'audit : qui, quoi, QUEL PATIENT, et à quelle heure")
 rows = c.get("/audit").json()
 print(f"   {len(rows)} entrées — les 6 plus récentes :")
 for r in rows[:6]:

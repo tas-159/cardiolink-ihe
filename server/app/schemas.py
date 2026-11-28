@@ -63,10 +63,34 @@ class StudyMetaOut(BaseModel):
 class DocumentOut(BaseModel):
     id: int
     title: str
-    patientName: str
+    patientName: str  # display only — the link is the qualified identifier
     docType: str
     date: str
     author: str
+    uniqueId: str = ""
+    mimeType: str = ""
+    sizeBytes: int = 0
+    classCode: str = ""
+    availabilityStatus: str = ""
+
+
+class DocumentEntryOut(BaseModel):
+    """DocumentEntry metadata, as a registry query (ITI-18) returns it."""
+    uniqueId: str
+    entryUUID: str
+    repositoryUniqueId: str
+    title: str
+    classCode: str
+    typeCode: str
+    formatCode: str
+    mimeType: str
+    availabilityStatus: str
+    patientId: str        # affinity-domain identity, CX form
+    sourcePatientId: str  # producing system's identity, CX form
+    author: str
+    creationTime: str
+    sizeBytes: int
+    hash: str
 
 
 class AuditOut(BaseModel):
@@ -181,9 +205,10 @@ class StudyCreate(BaseModel):
 
 
 class DocumentCreate(BaseModel):
-    cardioId: Optional[str] = None
+    cardioId: Optional[str] = None  # the patient's local identifier
+    source_domain: str = "CARDIO"   # the domain that issued it
     title: str
-    doc_type: str = "PDF"
+    doc_type: str = "PDF"  # CDA -> a real CDA R2 file, PDF -> a real PDF
 
 
 class UserCreate(BaseModel):
@@ -217,6 +242,12 @@ class DocContentOut(BaseModel):
     date: str
     author: str
     content: str
+    uniqueId: str = ""
+    mimeType: str = ""
+    sizeBytes: int = 0
+    patientId: str = ""
+    sourcePatientId: str = ""
+    hash: str = ""
 
 
 class PendingOut(BaseModel):

@@ -17,6 +17,7 @@ from sqlmodel import Session, func, select
 
 from ..audit import write_audit
 from ..database import get_session
+from ..domains import DOMAIN_LABEL, DOMAIN_OID, DOMAINS  # noqa: F401 (re-exported)
 from .. import matching
 from ..matching import STATUS_PENDING, STATUS_REJECTED, STATUS_VALIDATED
 from ..models import PatientIdentifier, PatientMaster, User
@@ -25,18 +26,6 @@ from ..schemas import (DecisionIn, DomainOut, HL7Out, IdentifierCreate, PendingO
 from ..security import get_current_user
 
 router = APIRouter(prefix="/pix", tags=["pix (identity)"])
-
-# Identification domains (code, label, OID).
-# NOTE: these OIDs are FICTITIOUS demonstration values, not registered arcs.
-DOMAINS = [
-    ("HIS", "Administration (HIS)", "1.2.3.4.1"),
-    ("CARDIO", "Cardiologie", "1.2.3.4.2"),
-    ("ECG", "ECG", "1.2.3.4.3"),
-    ("LABO", "Laboratoire", "1.2.3.4.4"),
-    ("PACS", "Imagerie (PACS)", "1.2.3.4.5"),
-]
-DOMAIN_OID = {code: oid for code, _, oid in DOMAINS}
-DOMAIN_LABEL = {code: label for code, label, _ in DOMAINS}
 
 FR_MONTHS = {
     "janvier": "01", "février": "02", "fevrier": "02", "mars": "03", "avril": "04",

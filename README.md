@@ -84,7 +84,9 @@ Set the API base URL by copying `.env.example` to `.env.local` (defaults to
 | `GET /patients/{id}` · `POST /patients` | dossier patient | PIX · ITI-8 |
 | `GET/POST /exams` | examens / prescription | LTW |
 | `GET/POST /studies` | imagerie DICOM | XDS-I.b · RAD-54 |
-| `GET/POST /documents` | documents cliniques | XDS.b · ITI-18/41 |
+| `POST /documents` | **publier** un document (vrai CDA ou vrai PDF) | XDS.b · ITI-41 |
+| `GET /documents/query?domain=&patient=` | **interroger** le registre : métadonnées seules | XDS.b · ITI-18 |
+| `GET /documents/{uniqueId}/retrieve` | **récupérer** le fichier depuis le dépôt | XDS.b · ITI-43 |
 | `GET /audit` | journal d'audit | ATNA · ITI-20 |
 | `GET /pix/{domain}/{identifier}` | **rapprochement d'identité** (CARDIO/CARD-025 → HIS-001, LAB-301, PACS-…) | PIX · ITI-9 |
 | `GET /pix/{domain}/{identifier}/hl7` | message d'identité émis par ce domaine | PIX · ITI-8 |

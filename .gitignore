@@ -23,6 +23,7 @@ server/.venv/
 server/*.db
 cardiolink.db
 server/dicom_store/
+server/document_store/
 
 # ---- Environment (keep *.example) ----
 .env

@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from .database import engine
 from .audit import write_audit
+from .doc_service import publish_document, resolve_by_identifier
 from .identifiers import allocate
 from . import matching
 from .models import Document, Exam, PatientIdentifier, PatientMaster, User
@@ -76,11 +77,15 @@ PATIENTS = [
     },
 ]
 
+# Documents of the demo data set. A document is attached to its patient by a
+# QUALIFIED IDENTIFIER, never by a name: two homonyms "Amine Ben Ali" exist in
+# this data set, which is exactly the confusion a name-based link creates.
+# (title, cardiology identifier, type, author)
 DOCUMENTS = [
-    ("Compte rendu cardiologique", "Amine Ben Ali", "CDA", "16 oct. 2026", "Dr Léa Martin"),
-    ("Résultats biologiques", "Sofia Cherif", "PDF", "16 oct. 2026", "Laboratoire central"),
-    ("Compte rendu d'échographie", "Youssef Mansour", "CDA", "15 oct. 2026", "Dr Léa Martin"),
-    ("Lettre de suivi", "Inès Nouira", "PDF", "14 oct. 2026", "Dr Sami Gharbi"),
+    ("Compte rendu cardiologique", "CARD-025", "CDA", "Dr Léa Martin"),
+    ("Résultats biologiques", "CARD-041", "PDF", "Laboratoire central"),
+    ("Compte rendu d'échographie", "CARD-019", "CDA", "Dr Léa Martin"),
+    ("Lettre de suivi", "CARD-058", "PDF", "Dr Sami Gharbi"),
 ]
 
 # M1: there is no hardcoded audit journal any more. The previous version
@@ -160,12 +165,6 @@ def seed_if_empty() -> None:
                 write_audit(session, actor=SEED_ACTOR,
                             action=f"Enregistrement examen {ref} ({etype})",
                             result="Validé")
-
-        for title, patient_name, doc_type, date, author in DOCUMENTS:
-            session.add(Document(
-                title=title, patient_name=patient_name, doc_type=doc_type,
-                date=date, author=author,
-            ))
 
         session.commit()
 
@@ -286,5 +285,27 @@ def ensure_pix_data() -> None:
             if row.status == matching.STATUS_VALIDATED and not row.match_rule:
                 row.match_rule = matching.RULE_DEMO_DATA
                 session.add(row)
+
+        session.commit()
+
+        # Correctif 2 — publish the demo documents through the SAME code path
+        # as the interface (ITI-41), so they carry real metadata and real
+        # files instead of a fixed invented text.
+        for title, cardio_id, doc_type, author in DOCUMENTS:
+            already = session.exec(
+                select(Document).where(Document.title == title)
+            ).first()
+            if already and already.unique_id:
+                continue
+            if already:
+                session.delete(already)  # legacy row without metadata
+                session.commit()
+            row = resolve_by_identifier(session, "CARDIO", cardio_id)
+            if not row:
+                continue
+            patient = session.get(PatientMaster, row.master_id)
+            publish_document(session, patient=patient, source_domain="CARDIO",
+                             source_local_id=cardio_id, title=title,
+                             doc_type=doc_type, author=author)
 
         session.commit()
